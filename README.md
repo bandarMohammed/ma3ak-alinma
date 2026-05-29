@@ -56,6 +56,17 @@
 - **Password:** `Demo1234`
 - *(Use the "Sign In as Demo User" button for automatic submission)*
 
+#### 4. Widescreen Responsive Wrapper & Virtual Phone Frame
+- **Mobile Fidelity:** Renders as a full-screen, native-feeling mobile app on all mobile and tablet viewports (< 768px).
+- **Desktop Virtual Phone Frame:** On larger desktop screens (>= 768px), the entire mobile app is automatically contained inside an elegant mock physical phone device frame (max-width: 420px, height: 90vh, rounded corners, soft backshadows).
+- **Branded Desktop Companion Panel:** Beside the phone frame, a premium branded panel is displayed with Alinma + Ma3ak branding, the tagline ("مستشارك المالي الذكي"), Saudi geometric patterns, and a subtle shimmering gradient background using Alinma corporate colors (Navy `#1B2A4A` and Purple `#7C6FD4`).
+
+---
+
+### Deployment & Live URLs
+- **Live Production Application:** [https://ma3ak-alinma.vercel.app](https://ma3ak-alinma.vercel.app)
+- **Repository Visibility:** Strictly **PRIVATE** (Only accessible to you) to secure the hackathon intellectual property.
+
 ---
 
 ## 🇸🇦 النسخة العربية
@@ -108,3 +119,14 @@
 - **البريد الإلكتروني:** `demo@alinma.sa`
 - **كلمة المرور:** `Demo1234`
 - *(استخدم زر "الدخول كمستخدم تجريبي" لتعبئة البيانات تلقائياً)*
+
+#### ٤. إطار الهاتف الافتراضي المستجيب وتصميم سطح المكتب
+- **توافق كامل للهواتف المحمولة:** يظهر كـ تطبيق هاتف أصيل ملء الشاشة على كافة أحجام الهواتف والأجهزة اللوحية (< 768px).
+- **إطار هاتف تفاعلي متميز:** على الشاشات الكبيرة وأجهزة الكمبيوتر المحمول (>= 768px)، يتم تلقائياً تغليف واجهات التطبيق بالكامل داخل إطار هاتف افتراضي رائع يحاكي الأجهزة الحقيقية (بعرض 420 بكسل وارتفاع 90% مع زوايا دائرية وظلال ناعمة).
+- **لوحة الهوية المصرفية التفاعلية:** بجانب إطار الهاتف، يتم عرض لوحة سطح مكتب مخصصة مفعمة بالهوية البصرية لمصرف الإنماء مع شعار "معك"، والعبارة التحفيزية ("مستشارك المالي الذكي")، وزخارف هندسية مستوحاة من التراث السعودي، وخلفية ديناميكية متدرجة الألوان تجمع بين لوني الإنماء (الكحلي `#1B2A4A` والبنفسجي `#7C6FD4`).
+
+---
+
+### النشر والروابط الحية للمشروع
+- **رابط التطبيق المباشر (Vercel):** [https://ma3ak-alinma.vercel.app](https://ma3ak-alinma.vercel.app)
+- **خصوصية كود المشروع:** المستودع **خاص وآمن (PRIVATE)** بالكامل (متاح لك فقط) لحماية الفكرة وتفاصيل النموذج قبل المنافسة والتحكيم.
