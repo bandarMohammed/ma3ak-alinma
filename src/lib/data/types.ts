@@ -57,15 +57,55 @@ export interface ChatMessage {
       largestTransactions: Array<Transaction>;
       insights: string[];
     };
+    // Carries the full SimulationResult returned by SimulatorManager (score, riskLevel,
+    // timeline, tableData, sensitivity, warnings, insights, summary, etc.). Kept permissive
+    // so the API's rich payload flows straight through to the simulation card renderer.
     simulationData?: {
       decision: string;
       scenarios: Array<{
         name: string; // Now, Wait 6 Months, Adjusted Terms
         monthly_impact: number;
-        balance_in_12m: number;
+        balance_in_period?: number;
+        balance_in_12m?: number;
         verdict: string; // Arabic or English depending on selected language
       }>;
-      recommendation: string;
+      recommendation?: string;
+      score?: {
+        score: number;
+        color: string;
+        label: string;
+        reasons: string[];
+      };
+      riskLevel?: string;
+      projectionMonths?: number;
+      insights?: Array<{ text: string }>;
+      timeline?: Array<{
+        month: number;
+        monthName: string;
+        balanceNow: number;
+        balanceWait: number;
+        balanceAdjusted: number;
+      }>;
+      tableData?: Array<{
+        metric: string;
+        scenarioNow: string;
+        scenarioWait: string;
+        scenarioAdjusted: string;
+      }>;
+      sensitivity?: Array<{
+        metric: string;
+        value: string;
+        impactText: string;
+        isCritical: boolean;
+      }>;
+      warnings?: string[];
+      summary?: string;
+    };
+    // In-progress conversational simulation state (advisor slot-filling). Round-trips
+    // back to /api/chat so the stateless route can resume asking for missing inputs.
+    pendingSim?: {
+      awaiting: string;
+      collected: Record<string, any>;
     };
   };
 }

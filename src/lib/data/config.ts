@@ -9,7 +9,7 @@ import { SupabaseDataProvider } from "./SupabaseDataProvider";
 // Set USE_MOCK_AI to false to switch the chatbot from Mock to real OpenAI (gpt-4o-mini).
 // ============================================================================
 export const USE_MOCK_DATA = true;
-export const USE_MOCK_AI = true;
+export const USE_MOCK_AI = false;
 
 let activeProvider: DataProvider | null = null;
 

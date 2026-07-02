@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { Transaction } from "../../../lib/data/types";
 import { USE_MOCK_AI } from "../../../lib/data/config";
+import { SimulatorManager } from "../../../lib/simulator/manager";
+import { extractSimulationIntent } from "../../../lib/simulator/intent";
+import { runSimulationConversation, findPendingSim } from "../../../lib/simulator/conversation";
 
 // Force Node.js runtime as required by Recharts/Next environments
 export const runtime = "nodejs";
@@ -18,6 +21,41 @@ export async function POST(req: Request) {
     const isArabic = language === "ar";
     const lastUserMessage = messages[messages.length - 1]?.content || "";
 
+    const apiKey = process.env.OPENAI_API_KEY;
+    const hasRealKey = !!apiKey && !apiKey.includes("dummy");
+
+    // ============================================================================
+    // CONVERSATIONAL SIMULATION (advisor asks step-by-step, no assumed defaults)
+    // ------------------------------------------------------------------------
+    // If we are mid-conversation (the last assistant message is still awaiting a
+    // slot answer), always resume the slot-filling here regardless of keywords.
+    // ============================================================================
+    const pendingSim = findPendingSim(messages);
+    if (pendingSim) {
+      const result = runSimulationConversation(messages, transactions, language);
+      return NextResponse.json(result);
+    }
+
+    // ============================================================================
+    // HYBRID INTENT LAYER (understands Saudi colloquial Arabic / عامية)
+    // When a real OpenAI key is present, gpt-4o-mini parses the opening message
+    // into structured slots; the conversation then asks for anything still missing
+    // and the deterministic SimulatorManager does all the math.
+    // If no real key (demo/offline), this is skipped and keyword matching is used.
+    // ============================================================================
+    if (hasRealKey) {
+      try {
+        const openaiClient = new OpenAI({ apiKey });
+        const intent = await extractSimulationIntent(openaiClient, lastUserMessage, language);
+        if (intent?.isSimulation) {
+          const result = runSimulationConversation(messages, transactions, language, intent);
+          return NextResponse.json(result);
+        }
+      } catch (err) {
+        console.error("Hybrid intent extraction failed; falling back to keyword mode:", err);
+      }
+    }
+
     // ============================================================================
     // MOCK AI INTELLIGENT SIMULATION MODE
     // ============================================================================
@@ -27,44 +65,54 @@ export async function POST(req: Request) {
 
       const queryLower = lastUserMessage.toLowerCase();
 
+      // Differentiate Capability 3: FUTURE DECISION SIMULATION
+      const simulationKeywords = [
+        "car", "سيارة", "سياره", "buy", "شراء", "ايفون", "أيفون", "iphone", "قرض", "loan", "أقساط", "installment",
+        "أبي", "ابغى", "أفكر", "ودي", "ناوي", "هل أقدر", "وش رأيك", "تتوقع أقدر", "ودي أشتري", "ودي أسافر", "ودي أتزوج",
+        "بشتري", "بسافر", "بآخذ قرض", "بقسط", "بمول", "أقدر أتحمل", "وش يصير لو", "لو اشتريت", "لو سافرت", "لو دفعت",
+        "لو أخذت قرض", "لو مولت", "سفر", "سياحة", "رحلة", "زواج", "عرس", "ترميم", "تجديد", "دراسة", "جامعة", "مشروع",
+        "علاج", "لابتوب", "كمبيوتر", "عقار", "بيت", "منزل", "rent", "travel", "vacation", "wedding", "marry", "renovate",
+        "education", "tuition", "business", "afford", "thinking of", "planning to", "considering", "what if i", "borrow",
+        "financing", "finance", "installments", "monthly payment", "lease", "leasing", "mortgage"
+      ];
+      const isSimulationQuery = simulationKeywords.some(keyword => queryLower.includes(keyword));
+
       // Differentiate Capability 1: PAST REPORTS
       const isReportQuery = 
-        queryLower.includes("report") || 
-        queryLower.includes("تقرير") || 
-        queryLower.includes("صرفي") || 
-        queryLower.includes("history") ||
-        queryLower.includes("spent") ||
-        queryLower.includes("week") ||
-        queryLower.includes("month") ||
-        queryLower.includes("أسبوع") ||
-        queryLower.includes("شهر") ||
-        queryLower.includes("تاريخ");
-
-      // Differentiate Capability 3: FUTURE DECISION SIMULATION
-      const isSimulationQuery = 
-        queryLower.includes("car") || 
-        queryLower.includes("سيارة") || 
-        queryLower.includes("buy") || 
-        queryLower.includes("شراء") || 
-        queryLower.includes("ايفون") ||
-        queryLower.includes("أيفون") ||
-        queryLower.includes("iphone") ||
-        queryLower.includes("قرض") ||
-        queryLower.includes("loan") ||
-        queryLower.includes("أقساط") ||
-        queryLower.includes("installment");
+        !isSimulationQuery && (
+          queryLower.includes("report") || 
+          queryLower.includes("تقرير") || 
+          queryLower.includes("صرفي") || 
+          queryLower.includes("history") ||
+          queryLower.includes("spent") ||
+          queryLower.includes("week") ||
+          queryLower.includes("month") ||
+          queryLower.includes("أسبوع") ||
+          queryLower.includes("شهر") ||
+          queryLower.includes("تاريخ")
+        );
 
       // Differentiate Capability 2: PRESENT HABITS / BEHAVIOR
       const isHabitsQuery = 
-        queryLower.includes("habits") || 
-        queryLower.includes("عادات") || 
-        queryLower.includes("أحوالي") || 
-        queryLower.includes("أموالي") || 
-        queryLower.includes("صرفي") ||
-        queryLower.includes("spending too much") ||
-        queryLower.includes("bad habit") ||
-        queryLower.includes("كيف أحوالي") ||
-        queryLower.includes("أموري");
+        !isSimulationQuery && !isReportQuery && (
+          queryLower.includes("habits") || 
+          queryLower.includes("عادات") || 
+          queryLower.includes("أحوالي") || 
+          queryLower.includes("أموالي") || 
+          queryLower.includes("صرفي") ||
+          queryLower.includes("spending too much") ||
+          queryLower.includes("bad habit") ||
+          queryLower.includes("كيف أحوالي") ||
+          queryLower.includes("أموري")
+        );
+
+      // ============================================================================
+      // CAPABILITY 3: DECISION SIMULATION (conversational — asks for missing inputs)
+      // ============================================================================
+      if (isSimulationQuery) {
+        const result = runSimulationConversation(messages, transactions, language);
+        return NextResponse.json(result);
+      }
 
       // ============================================================================
       // CAPABILITY 1: DETAILED PAST REPORTS
@@ -126,36 +174,42 @@ export async function POST(req: Request) {
           .reduce((sum, t) => sum + t.amount, 0);
 
         if (isArabic) {
-          insights.push(`إجمالي الدخل لهذه الفترة بلغ ${totalIncome.toLocaleString()} ريال، بينما بلغ الصرف ${totalSpent.toLocaleString()} ريال.`);
+          insights.push(`يُشير التحليل المالي إلى أن إجمالي الدخل لهذه الفترة بلغ ${totalIncome.toLocaleString()} ريال سعودي، بينما بلغ إجمالي الصرف الاستهلاكي ${totalSpent.toLocaleString()} ريال سعودي.`);
           
           if (hungerstationTotal > 150) {
-            insights.push(`لاحظنا زيادة صرف على تطبيقات التوصيل (هنجرستيشن وجاهز) بقيمة ${hungerstationTotal.toLocaleString()} ريال. تقليل الصرف هنا بمعدل مرتين أسبوعياً يوفر لك الكثير.`);
+            insights.push(`يتضح من تحليل سلوكك الإنفاقي ارتفاع مصروفات تطبيقات توصيل الأغذية (هنجرستيشن وجاهز) بقيمة ${hungerstationTotal.toLocaleString()} ريال سعودي، مما يستدعي ترشيد هذا البند لتحسين الفائض المالي.`);
           }
           
           const shoppingCat = topCategories.find(c => c.category === "Shopping");
           if (shoppingCat && shoppingCat.amount > 500) {
-            insights.push(`فئة التسوق كانت من أعلى فئات الصرف بنسبة ${shoppingCat.percentage}%، نوصي بتأجيل المشتريات غير الضرورية.`);
+            insights.push(`تُظهر المؤشرات أن فئة التسوق شكّلت النسبة الأعلى من الإنفاق بوقع ${shoppingCat.percentage}%، وبناءً على البيانات المتاحة يُنصح بتأجيل المشتريات الكمالية.`);
           }
 
           if (insights.length < 3) {
-            insights.push(`صافي وفرك المالي للفترة الحالية يقدر بـ ${(totalIncome - totalSpent).toLocaleString()} ريال. خطتك الادخارية جيدة، استمر بالتركيز!`);
+            insights.push(`وفقاً لبياناتك، يُقدّر صافي الوفر المالي للفترة الحالية بقيمة ${(totalIncome - totalSpent).toLocaleString()} ريال سعودي، وهو ما يدعم خطتك الادخارية المستهدفة.`);
           }
         } else {
-          insights.push(`Total income for this period is ${totalIncome.toLocaleString()} SAR, while total spending is ${totalSpent.toLocaleString()} SAR.`);
+          insights.push(`Financial analysis indicates that total income for this period reached ${totalIncome.toLocaleString()} SAR, whereas aggregate consumption stood at ${totalSpent.toLocaleString()} SAR.`);
           
           if (hungerstationTotal > 150) {
-            insights.push(`You spent a total of ${hungerstationTotal.toLocaleString()} SAR on Hungerstation & Jahez delivery. Reducing this could save you up to 20% on food expenses.`);
+            insights.push(`It is evident from auditing your spending behavior that food delivery app expenditures (Hungerstation & Jahez) totaled ${hungerstationTotal.toLocaleString()} SAR, necessitating category rationalization.`);
           }
           
           const shoppingCat = topCategories.find(c => c.category === "Shopping");
           if (shoppingCat && shoppingCat.amount > 500) {
-            insights.push(`Shopping stands out as a top category at ${shoppingCat.percentage}% of your expenses. We recommend prioritizing essentials.`);
+            insights.push(`According to the available data, shopping constitutes a primary spending category at ${shoppingCat.percentage}%, suggesting a deferral of non-essential purchases.`);
           }
 
           if (insights.length < 3) {
-            insights.push(`Your net cashflow for this period is ${(totalIncome - totalSpent).toLocaleString()} SAR. Keep tracking to meet your goals!`);
+            insights.push(`Your net cash surplus for the current period is projected at ${(totalIncome - totalSpent).toLocaleString()} SAR, supporting your predefined savings target.`);
           }
         }
+
+        // Append disclaimer to insights
+        insights.push(isArabic 
+          ? "يُرجى العلم بأن هذا التحليل يستند إلى البيانات المتاحة وهو لأغراض استشارية. للحصول على قرار تمويلي رسمي، يُرجى التواصل مع أحد مستشاري مصرف الإنماء."
+          : "Please note that this analysis is based on available data and is for advisory purposes only. For an official financing decision, please contact an Alinma Bank advisor."
+        );
 
         return NextResponse.json({
           type: "report",
@@ -173,9 +227,6 @@ export async function POST(req: Request) {
       // ============================================================================
       if (isHabitsQuery) {
         // Run deep audit of April/May habits from seed data
-        const totalBalance = transactions[0]?.amount || 12450.75; // current balance
-        
-        // Sum Hungerstation & Jahez spending in last 30 days
         const last30Days = new Date();
         last30Days.setDate(last30Days.getDate() - 30);
         
@@ -184,40 +235,40 @@ export async function POST(req: Request) {
           .filter(t => t.category === "Food & Restaurants" && (t.merchant === "Hungerstation" || t.merchant === "Jahez"))
           .reduce((sum, t) => sum + t.amount, 0);
 
-        // Check if there was any Transfer to savings recently (broken savings pattern)
-        const recentSavings = last30Txs.filter(t => t.category === "Transfers" && t.merchant === "Alinma Savings Pot");
-        const hasSavedRecently = recentSavings.length > 0;
-
         let content = "";
         
         if (isArabic) {
-          content = `أهلاً بك يا أحمد. قمتُ بتحليل كامل لحسابك وعادات صرفك في الشهر الماضي، وإليك التشخيص المالي الدقيق لـ «معك» 🧐:
+          content = `بناءً على البيانات المتاحة، يُشير التحليل المالي لمصرف الإنماء إلى سلوكك الإنفاقي وعادات الصرف خلال الـ 30 يوماً الماضية وفقاً للتالي:
 
-🚨 **العادة الأكثر استنزافاً:**
-الصرف على تطبيقات توصيل الطعام (**هنجرستيشن وجاهز**) مرتفع جداً ووصل إلى **${foodDeliveryTotal} ريال** خلال الـ 30 يوماً الماضية! هذا يمثل حوالي **${Math.round((foodDeliveryTotal / 15000) * 100)}%** من دخل راتبك الإجمالي.
+🚨 **الإنفاق الاستهلاكي المرتفع:**
+يتضح من تحليل سلوكك الإنفاقي ارتفاع ملحوظ في مصروفات تطبيقات توصيل الأغذية (هنجرستيشن وجاهز) بقيمة **${foodDeliveryTotal} ريال سعودي**، وهو ما يُمثّل نسبة **${Math.round((foodDeliveryTotal / 15000) * 100)}%** من إجمالي الدخل الشهري.
 
-📉 **فجوة الادخار (تنبيه مهم):**
-لاحظتُ أنك **توقفت تماماً عن تحويل الادخار المعتاد** (٢,٠٠٠ ريال شهرياً لحساب الادخار الإضافي) في شهري أبريل ومايو. الرصيد الحالي المتبقي هو **${transactions[0]?.amount || "12,450"} ريال**. إذا استمر هذا الصرف غير المنضبط، فقد تواجه نقصاً في تغطية دفعة السيارة القادمة في نهاية السنة.
+📉 **تحليل الوعاء الادخاري:**
+تُظهر المؤشرات توقف التدفقات النقدية الموجهة للادخار (والبالغ متوسطها المعتاد 2,000 ريال سعودي شهرياً لصندوق ادخار الإنماء) خلال شهري أبريل ومايو، ويبلغ رصيد حسابك الجاري المتاح حالياً **${transactions[0]?.amount || "12,450"} ريال سعودي**. يُشير التحليل المالي إلى أن استمرار نمط الإنفاق الحالي قد يؤثر سلباً على قدرتك على الوفاء بالتزامات الدفعة الأولى للسيارة المقررة في نهاية العام الحالي.
 
-📈 **توقعات نهاية الشهر:**
-بناءً على وتيرة صرفك الحالية، من المتوقع أن يتبقى لك حوالي **٧٥٠ ريال** فقط كفائض قبل نزول الراتب القادم في ٢٧ يونيو، مما يجعلك قريباً من منطقة العجز المالي.
+📈 **توقعات الرصيد:**
+وفقاً لبياناتك والإنفاق الحالي، يتضح من تحليل سلوكك الإنفاقي أن الفائض المالي المتوقع قبل دورة الرواتب القادمة في 27 يونيو يُقدّر بـ **750 ريال سعودي** فقط، مما يزيد من احتمالية التعرض لضغوط مالية.
 
-💡 **نصيحة الأسبوع العملية:**
-«تحدي الـ ١٥٠ ريالاً»: ضع حدّاً أقصى لخدمات توصيل الطعام بقيمة **١٥٠ ريالاً كلياً للأسبوع القادم**. قم بطهي وجباتك بالمنزل، وستلاحظ توفير أكثر من **٧٠٠ ريال** بنهاية الشهر كدفعة لادخارك المتوقف!`;
+💡 **التوصيات التنظيمية:**
+لتحسين كفاءة إدارتك المالية، يُقترح وضع سقف إنفاق أقصى لتطبيقات التوصيل لا يتجاوز **150 ريال سعودي أسبوعياً**، وتحويل الفائض الناتج مباشرة لتعزيز وعاء الادخار.
+
+يُرجى العلم بأن هذا التحليل يستند إلى البيانات المتاحة وهو لأغراض استشارية. للحصول على قرار تمويلي رسمي، يُرجى التواصل مع أحد مستشاري مصرف الإنماء.`;
         } else {
-          content = `Hello Ahmed. I did a thorough audit of your finances and recent spending patterns, here is your financial checkup 🧐:
+          content = `Based on the available data, Alinma Bank's financial analysis of your spending habits and consumption patterns over the past 30 days indicates the following:
 
-🚨 **Primary Leak (Food Delivery Spike):**
-Your spending on **Hungerstation & Jahez** is exceptionally high, totaling **${foodDeliveryTotal} SAR** over the last 30 days! This accounts for nearly **${Math.round((foodDeliveryTotal / 15000) * 100)}%** of your monthly income.
+🚨 **Elevated Discretionary Spend:**
+It is evident from auditing your spending behavior that food delivery app expenditures (Hungerstation & Jahez) totaled **${foodDeliveryTotal} SAR**, representing approximately **${Math.round((foodDeliveryTotal / 15000) * 100)}%** of your monthly income.
 
-📉 **Savings Alert (Broken Trend):**
-My records show that **you stopped your usual monthly savings transfer of 2,000 SAR** in April and May. Your current balance is **${transactions[0]?.amount || "12,450"} SAR**. Keeping this trajectory active might stall your Car Down Payment goal scheduled for December.
+📉 **Savings Trajectory Analysis:**
+Financial indicators point to a disruption in your recurring savings transfers (typically averaging 2,000 SAR monthly to your Alinma Savings Pot) during April and May. The current available balance is **${transactions[0]?.amount || "12,450"} SAR**. According to your data, maintaining this spending rate may impair your capacity to meet your car down payment target at the end of the year.
 
-📈 **Balance Trajectory:**
-Based on current velocity, you are projected to finish this monthly cycle with just **750 SAR** in cash buffer before your next salary on June 27th. This puts you very close to the red line.
+📈 **Surplus Forecast:**
+Financial analysis indicates that the projected surplus prior to the next salary cycle on June 27th is estimated at **750 SAR**, placing your cash buffer close to a deficit state.
 
-💡 **Actionable Weekly Tip:**
-"The 150 SAR Food Challenge": Limit your delivery orders to a total of **150 SAR for the upcoming week**. Meal-prep at home and you will instantly redirect over **700 SAR** back to your broken savings pot!`;
+💡 **Corrective Recommendations:**
+To optimize financial efficiency, it is recommended to enforce a spending cap on food delivery apps not exceeding **150 SAR per week**, thereby redirecting the preserved funds to restore your savings pot.
+
+Please note that this analysis is based on available data and is for advisory purposes only. For an official financing decision, please contact an Alinma Bank advisor.`;
         }
 
         return NextResponse.json({
@@ -226,119 +277,32 @@ Based on current velocity, you are projected to finish this monthly cycle with j
         });
       }
 
-      // ============================================================================
-      // CAPABILITY 3: DECISION SIMULATION
-      // ============================================================================
-      if (isSimulationQuery) {
-        // Parse purchase request (iPhone, car, loan)
-        let decisionType = isArabic ? "شراء سيارة بقسط ٢,٠٠٠ ريال" : "Buying a car in installments (2,000 SAR/mo)";
-        let amount = 120000;
-        let monthlyCost = 2000;
 
-        if (queryLower.includes("iphone") || queryLower.includes("أيفون") || queryLower.includes("ايفون") || queryLower.includes("5000")) {
-          decisionType = isArabic ? "شراء آيفون جديد بقسط ٤٥٠ ريال" : "Buying an iPhone in installments (450 SAR/mo)";
-          amount = 5000;
-          monthlyCost = 450;
-        } else if (queryLower.includes("loan") || queryLower.includes("قرض") || queryLower.includes("50000")) {
-          decisionType = isArabic ? "أخذ قرض شخصي بقيمة ٥٠,٠٠٠ ريال بقسط ١,٢٠٠ ريال" : "Taking a 50,000 SAR loan (1,200 SAR/mo)";
-          amount = 50000;
-          monthlyCost = 1200;
-        }
-
-        // Current user context
-        const currentBalance = transactions[0]?.amount || 12450.75;
-        const baseMonthlySavings = 3000; // salary 15k - avg fixed costs (rent 2.5k + bills 1k + living 8.5k)
-
-        // Scenario A: Do it now
-        // Directly impacts cashflow
-        const impactNow = -monthlyCost;
-        const balance12mNow = currentBalance + (12 * baseMonthlySavings) - (12 * monthlyCost) - (amount * 0.1); // down payment assumed 10%
-        const verdictNow = isArabic 
-          ? "مخاطرة عالية! ستواجه عجزاً في تدفقك النقدي وسيتعطل هدف السيارة تماماً." 
-          : "High risk! Will cause immediate cash flow strains and break your car savings goal.";
-
-        // Scenario B: Wait 6 months
-        // Save for 6 months, then start
-        const impactWait = -monthlyCost; // only starts after 6m
-        const balance12mWait = currentBalance + (12 * baseMonthlySavings) - (6 * monthlyCost); // only 6 installments paid
-        const verdictWait = isArabic
-          ? "موصى به بشدة! يمنحك مهلة ٦ أشهر لبناء احتياطي طوارئ وتخفيف الضغط."
-          : "Highly recommended! Gives you a 6-month buffer to accumulate emergency reserves.";
-
-        // Scenario C: Adjusted Terms (Larger down payment, longer tenure)
-        const adjustedMonthlyCost = Math.round(monthlyCost * 0.6); // 40% lower monthly installment
-        const adjustedDownPayment = amount * 0.25; // 25% down payment
-        const balance12mAdjusted = currentBalance - adjustedDownPayment + (12 * baseMonthlySavings) - (12 * adjustedMonthlyCost);
-        const verdictAdjusted = isArabic
-          ? "مقبول ومستقر، بشرط خفض مصروفات المطاعم بنسبة ٣٠٪ لتعويض الدفعة الأولى."
-          : "Stable and feasible, provided you trim food delivery by 30% to offset the down payment.";
-
-        let recommendation = "";
-        if (isArabic) {
-          recommendation = `توصية «معك» النهائية 🌟:
-أنصحك بـ **السيناريو ب (الانتظار لمدة ٦ أشهر)**. 
-
-**السبب المالي:** 
-بسبب توقف ادخارك في الشهرين الماضيين ووجود قفزة مصروفات سابقة في مكتبة جرير بقيمة ٣,٥٠٠ ريال، فإن اتخاذ التزام مالي بقيمة **${monthlyCost} ريال** شهرياً فوراً سيضعف شبكة الأمان المالي الخاصة بك تماماً ويهدد رصيدك المتاح. 
-
-الانتظار لـ ٦ أشهر سيتيح لك استعادة خطة الادخار التراكمي وتنزيل قسطك الشهري بأمان تام دون الوقوع في أي عجز مالي!`;
-        } else {
-          recommendation = `Ma3ak's Final Recommendation 🌟:
-I strongly recommend **Scenario B (Waiting for 6 Months)**. 
-
-**Financial Rationale:**
-Due to your recent saving breakdown in April/May and your prior large impulse purchase of 3,500 SAR at Jarir, taking on an immediate obligation of **${monthlyCost} SAR** per month will strain your cash buffer and delay your critical emergency reserves.
-
-Waiting 6 months allows you to re-establish your 2,000 SAR monthly savings and ensures you can afford this decision comfortably without risking financial stress.`;
-        }
-
-        return NextResponse.json({
-          type: "simulation",
-          decision: decisionType,
-          scenarios: [
-            {
-              name: isArabic ? "أ: البدء فوراً" : "A: Start Now",
-              monthly_impact: impactNow,
-              balance_in_12m: Math.round(balance12mNow),
-              verdict: verdictNow
-            },
-            {
-              name: isArabic ? "ب: الانتظار ٦ أشهر" : "B: Wait 6 Months",
-              monthly_impact: 0, // no monthly impact for first 6 months
-              balance_in_12m: Math.round(balance12mWait),
-              verdict: verdictWait
-            },
-            {
-              name: isArabic ? "ج: تعديل الشروط" : "C: Adjusted Terms",
-              monthly_impact: -adjustedMonthlyCost,
-              balance_in_12m: Math.round(balance12mAdjusted),
-              verdict: verdictAdjusted
-            }
-          ],
-          recommendation
-        });
-      }
 
       // Default plain text reply (e.g. conversational chit-chat)
       let textReply = "";
       if (isArabic) {
-        textReply = `أهلاً بك يا أحمد. أنا معك، مستشارك المالي الذكي من مصرف الإنماء 🦊.
+        textReply = `مرحباً بك. أنا «معك»، المستشار المالي الرقمي لمصرف الإنماء.
 
-يمكنك أن تطلب مني:
-١. **الحصول على تقارير الصرف:** مثل "اعطني تقريراً لـ ٧ أيام الماضية".
-٢. **تحليل عاداتك المالية الحالية:** مثل "هل أصرف أكثر من اللازم؟".
-٣. **محاكاة قراراتك المستقبلية:** مثل "أفكر في أخذ تمويل شخصي بقيمة ٥٠,٠٠٠ ريال، ما رأيك؟".
+وفقاً لبياناتك المالية المتاحة، يُمكنني تقديم التحليلات التالية:
+1. **تقارير الأداء المالي:** إصدار تقارير الإنفاق التفصيلية (مثال: "توفير تقرير مالي للأسبوع الماضي").
+2. **تحليل السلوك الإنفاقي:** تقييم عادات الصرف ومواطن الهدر (مثال: "تحليل عادات الصرف الجارية").
+3. **محاكاة القرارات التمويلية:** دراسة الأثر المالي للالتزامات المستقبلية (مثال: "دراسة جدوى شراء سيارة بقسط 2,000 ريال").
 
-كيف يمكنني مساعدتك اليوم في تنمية وإدارة أموالك؟`;
+بناءً على البيانات المتاحة، كيف يمكنني دعم إدارتك المالية اليوم؟
+
+يُرجى العلم بأن هذا التحليل يستند إلى البيانات المتاحة وهو لأغراض استشارية. للحصول على قرار تمويلي رسمي، يُرجى التواصل مع أحد مستشاري مصرف الإنماء.`;
       } else {
-        textReply = `Hello Ahmed! I am Ma3ak, your Alinma Bank smart financial companion 🦊.
+        textReply = `Welcome. I am Ma3ak, the digital financial advisor representing Alinma Bank.
 
-You can ask me to:
-1. **Analyze your history (Smart Reports):** e.g., "Show me my spending from the last month".
-2. **Review your present habits (Audit):** e.g., "Am I spending too much?".
-3. **Simulate future decisions (Forecast):** e.g., "I want to buy a car for 120,000 SAR in installments, should I?".
+Based on your available financial data, I am authorized to perform the following services:
+1. **Financial Performance Reports:** Generating detailed spending reports (e.g., "Provide a financial report for the last week").
+2. **Spending Behavior Analysis:** Auditing consumption habits (e.g., "Analyze current spending behavior").
+3. **Financial Decision Simulation:** Evaluating the cashflow impact of future commitments (e.g., "Simulate a car purchase with a 2,000 SAR monthly installment").
 
-How can I help you optimize and grow your wealth today?`;
+How may I assist you with your financial management today?
+
+Please note that this analysis is based on available data and is for advisory purposes only. For an official financing decision, please contact an Alinma Bank advisor.`;
       }
 
       return NextResponse.json({
@@ -350,7 +314,6 @@ How can I help you optimize and grow your wealth today?`;
     // ============================================================================
     // REAL OPENAI API MODE
     // ============================================================================
-    const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey || apiKey.includes("dummy")) {
       return NextResponse.json(
         { error: "OpenAI API Key is missing or invalid. Set USE_MOCK_AI to true in src/lib/data/config.ts to run in mock mode." },
@@ -366,17 +329,36 @@ How can I help you optimize and grow your wealth today?`;
     )).join("\n");
 
     const systemPrompt = `
-You are Ma3ak (معك), a personal financial advisor for Alinma Bank customers. You are warm, smart, concise, and culturally aware (Saudi context). You speak in the user's selected language (Arabic or English).
-
-You have access to the user's transaction data. Always base your answers on real data, never fabricate numbers.
+You are Ma3ak (معك), a professional financial advisor representing Alinma Bank. You communicate in a formal, official banking tone, never casual. You speak in the user's selected language (Arabic or English). Always base your answers on real data, never fabricate numbers.
 
 Below is the user's recent transaction history:
 ${txSummary}
 
+Strict Guidelines for Tone & Style:
+1. FORBIDDEN Words and Phrases (DO NOT USE):
+   - In Arabic: "أنصحك", "حاول", "ممكن", "ربما", "أعتقد", "بصراحة", "طبعاً"
+   - In English: "I recommend", "try to", "maybe", "probably", "I think", "honestly", "of course", "should", "you could"
+2. REQUIRED Words and Phrases (USE THEM):
+   - In Arabic: "يُشير التحليل المالي إلى", "وفقاً لبياناتك", "تُظهر المؤشرات", "يتضح من تحليل سلوكك الإنفاقي", "بناءً على البيانات المتاحة"
+   - In English: "Financial analysis indicates", "According to your data", "Indicators show", "It is evident from auditing your spending behavior", "Based on the available data"
+3. You must end all consultations, recommendations, and text responses with the following exact disclaimer text:
+   - In Arabic: "يُرجى العلم بأن هذا التحليل يستند إلى البيانات المتاحة وهو لأغراض استشارية. للحصول على قرار تمويلي رسمي، يُرجى التواصل مع أحد مستشاري مصرف الإنماء."
+   - In English: "Please note that this analysis is based on available data and is for advisory purposes only. For an official financing decision, please contact an Alinma Bank advisor."
+
 You can do three things:
 1. Generate financial reports for any time period (min 7 days)
 2. Analyze current spending habits and give actionable tips
-3. Simulate future financial decisions with 3 scenarios
+3. Simulate future financial decisions with 3 scenarios.
+
+Decision Simulation Guidelines:
+- Categorize the user's intent into either:
+  1) Category 1: One-Time Purchase / Expense (e.g. traveling, wedding, buying land, university fees, home renovation, buying phone/car in cash, starting a business, etc.).
+  2) Category 2: Financing / Loan / Installment (e.g. loan, borrowing, installments, mortgage, monthly payments, lease, etc.).
+- Information Gathering:
+  - For Category 1: Verify you have the "Total Cost/Price". If missing, you MUST return a type "text" JSON response politely requesting the cost.
+  - For Category 2: Verify you have the "Financing Amount/Price". If missing, you MUST return a type "text" JSON response politely requesting the amount.
+  - Retrieve all remaining information (income, savings, fixed expenses, obligations) from the customer's transaction profile below.
+- If you have the required cost/amount, return type "simulation" JSON. Otherwise, return type "text" JSON to request the missing info.
 
 When generating a report, return a JSON object with this structure:
 {
@@ -393,16 +375,38 @@ When simulating a decision, return a JSON object with this structure:
 {
   "type": "simulation",
   "decision": "...",
+  "score": {
+    "score": ..., // 0-100 score
+    "color": "...", // "green" | "blue" | "yellow" | "red"
+    "label": "...", // "Excellent Decision" | "Good Decision" | "Needs Review" | "Not Recommended"
+    "reasons": ["...", "..."] // Bullet points of diagnostic reasoning (DTI under 33%, etc.)
+  },
+  "riskLevel": "...", // "Low Risk" | "Medium Risk" | "High Risk"
   "scenarios": [
-    {"name": "Now", "monthly_impact": ..., "balance_in_12m": ..., "verdict": "..."},
-    {"name": "Wait 6 months", "monthly_impact": ..., "balance_in_12m": ..., "verdict": "..."},
-    {"name": "Adjusted terms", "monthly_impact": ..., "balance_in_12m": ..., "verdict": "..."}
+    {"name": "Proceed Today", "monthly_impact": ..., "balance_in_period": ..., "verdict": "..."},
+    {"name": "Increase Down Payment", "monthly_impact": ..., "balance_in_period": ..., "verdict": "..."},
+    {"name": "Delay Purchase", "monthly_impact": ..., "balance_in_period": ..., "verdict": "..."}
   ],
-  "recommendation": "..."
+  "insights": [{"text": "..."}, {"text": "..."}], // Programmatic metrics styled in bank language
+  "timeline": [
+    {"month": 0, "monthName": "Month 0", "balanceNow": ..., "balanceWait": ..., "balanceAdjusted": ...}
+  ],
+  "tableData": [
+    {"metric": "...", "scenarioNow": "...", "scenarioAdjusted": "...", "scenarioWait": "..."}
+  ],
+  "sensitivity": [
+    {"metric": "...", "value": "...", "impactText": "...", "isCritical": ...}
+  ],
+  "warnings": ["...", "..."],
+  "summary": "...", // Final summary text
+  "projectionMonths": ... // 6, 12, 36, 60
 }
 
 Otherwise, return a JSON object with this structure:
-{"type": "text", "content": "..."}
+{
+  "type": "text",
+  "content": "..."
+}
 
 Always be honest. If a decision is bad for the user, say so clearly. Return ONLY valid JSON and nothing else. No markdown wrappers like \`\`\`json.
 `;

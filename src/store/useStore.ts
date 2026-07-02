@@ -278,14 +278,30 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   fetchSavedReports: async () => {
-    const { user } = get();
-    if (!user) return;
-
     try {
       if (typeof window !== "undefined") {
-        const stored = localStorage.getItem(`ma3ak_saved_reports_${user.id}`);
-        const savedReports = stored ? JSON.parse(stored) : [];
-        set({ savedReports });
+        const stored = localStorage.getItem("ma3ak_saved_reports");
+        const storedReports = stored ? JSON.parse(stored) : [];
+        
+        const mappedReports: SavedReport[] = storedReports.map((item: any) => {
+          if (item && item.data) {
+            return {
+              id: item.id,
+              user_id: "user-default",
+              title: item.title,
+              start_date: "",
+              end_date: "",
+              total_spent: item.data.totalSpent || 0,
+              total_income: item.data.totalIncome || 0,
+              top_categories: item.data.topCategories || [],
+              insights: item.data.insights || [],
+              saved_at: item.date || new Date().toISOString()
+            };
+          }
+          return item;
+        });
+        
+        set({ savedReports: mappedReports });
       }
     } catch (err: any) {
       set({ error: err.message });
@@ -293,24 +309,30 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   saveReport: async (report) => {
-    const { user } = get();
-    if (!user) return;
-
     try {
       if (typeof window !== "undefined") {
-        const stored = localStorage.getItem(`ma3ak_saved_reports_${user.id}`);
-        const savedReports: SavedReport[] = stored ? JSON.parse(stored) : [];
+        const stored = localStorage.getItem("ma3ak_saved_reports");
+        const storedReports = stored ? JSON.parse(stored) : [];
         
-        const newReport: SavedReport = {
-          ...report,
+        const titleParts = report.title ? report.title.split(" - ") : [];
+        const period = titleParts[1] || "";
+
+        const newEntry = {
           id: `report-${Date.now()}`,
-          user_id: user.id,
-          saved_at: new Date().toISOString()
+          title: report.title || "تقرير مالي",
+          date: new Date().toISOString(),
+          period: period,
+          data: {
+            totalSpent: report.total_spent,
+            totalIncome: report.total_income,
+            topCategories: report.top_categories,
+            insights: report.insights
+          }
         };
 
-        savedReports.unshift(newReport);
-        localStorage.setItem(`ma3ak_saved_reports_${user.id}`, JSON.stringify(savedReports));
-        set({ savedReports });
+        storedReports.unshift(newEntry);
+        localStorage.setItem("ma3ak_saved_reports", JSON.stringify(storedReports));
+        await get().fetchSavedReports();
       }
     } catch (err: any) {
       set({ error: err.message });
