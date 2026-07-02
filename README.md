@@ -15,7 +15,7 @@
 ## 🖼️ Screenshots · لقطات الشاشة
 <!-- Shown once here (shared for both languages) — the UI is language-neutral, so no need to repeat. -->
 
-| Desktop — Virtual Phone Frame · إطار الهاتف على سطح المكتب | Dashboard · لوحة التحكم |
+| Desktop Frame · إطار سطح المكتب | Dashboard · لوحة التحكم |
 | :---: | :---: |
 | ![Desktop virtual phone frame with the branded Alinma companion panel](docs/screenshots/desktop-phone-frame.png) | ![Dashboard — balance, spending overview, and recent transactions](docs/screenshots/dashboard.png) |
 
