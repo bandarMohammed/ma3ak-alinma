@@ -3,16 +3,71 @@
 > **مستشارك المالي الشخصي، معك دائماً**  
 > Built for the **Amad Hackathon (هاكاثون أَمَدْ)** by **Tuwaiq Academy**, sponsored by **Alinma Bank**.
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-ma3ak--alinma.vercel.app-7C6FD4?style=for-the-badge)](https://ma3ak-alinma.vercel.app)
+&nbsp;
+![Next.js 14](https://img.shields.io/badge/Next.js_14-000000?style=for-the-badge&logo=next.js&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI_gpt--4o--mini-412991?style=for-the-badge&logo=openai&logoColor=white)
+![Vercel](https://img.shields.io/badge/Deployed_on-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)
+
 ---
 
-## 🇸🇦 English Version
+## 🖼️ Screenshots · لقطات الشاشة
+<!-- Shown once here (shared for both languages) — the UI is language-neutral, so no need to repeat. -->
 
-### Project Overview
+| Desktop — Virtual Phone Frame · إطار الهاتف على سطح المكتب | Dashboard · لوحة التحكم |
+| :---: | :---: |
+| ![Desktop virtual phone frame with the branded Alinma companion panel](docs/screenshots/desktop-phone-frame.png) | ![Dashboard — balance, spending overview, and recent transactions](docs/screenshots/dashboard.png) |
+
+**AI Chat — the "Ma3ak" Assistant · المحادثة الذكية «معك»**
+
+![Ma3ak AI chat welcome screen with the three capability cards: report, habits, and simulation](docs/screenshots/chat-welcome.png)
+
+<!-- More shots to add later: financial report card (PieChart) and decision simulation card (score gauge + LineChart). -->
+
+---
+
+## 🇬🇧 English Version
+
+### 📖 Project Overview
 **Ma3ak (معك — "With You")** is a production-grade personal finance companion integrated into Alinma Bank's mobile application. Powered by advanced artificial intelligence (OpenAI `gpt-4o-mini`), it acts as a proactive advisor that leverages historical client transaction data to perform retrospective audits, evaluate current habits, and forecast the financial consequences of prospective consumer decisions using dynamic simulations.
 
 ---
 
-### Key Technical Architecture Features
+### 🚀 Live Demo
+- **Live Application:** **[ma3ak-alinma.vercel.app](https://ma3ak-alinma.vercel.app)**
+- **Quickest path:** open the link → tap **"Sign In as Demo User"**.
+
+---
+
+### 🧩 Tech Stack
+| Layer | Technologies |
+|---|---|
+| **Framework** | Next.js 14 (App Router), React 18 |
+| **Language** | TypeScript |
+| **Styling & UI** | Tailwind CSS, shadcn/ui, Framer Motion |
+| **State Management** | Zustand |
+| **Artificial Intelligence** | OpenAI `gpt-4o-mini` |
+| **Data Layer** | Supabase (PostgreSQL) via `@supabase/supabase-js`, plus an offline `localStorage` mock provider |
+| **Charts & Visualization** | Recharts |
+| **PDF Export** | jsPDF + html2canvas |
+| **Icons** | Lucide React |
+| **Deployment** | Vercel |
+
+---
+
+### ✨ Core Features
+- 🤖 **AI Financial Advisor (معك):** A conversational assistant embedded in the banking app that understands natural Arabic (including Saudi dialect) and analyzes the customer's real transaction data.
+- 📊 **Financial Reports:** On-demand spending reports for any date range, with category breakdowns, an embedded PieChart, and PDF export.
+- 🔍 **Spending-Habit Analysis:** A proactive audit of recent behavior (e.g. food-delivery spikes and a broken savings trend).
+- 🧮 **Decision Simulation:** Forecasts the impact of major financial decisions (car, loan, travel, etc.) across multiple scenarios with projected balance timelines.
+- 🌐 **Bilingual & RTL:** First-class Arabic (RTL) / English (LTR) support with instant switching.
+- 📱 **Native-Feel UI:** A mobile-first experience wrapped in a virtual phone frame on desktop.
+- 🗄️ **Pluggable Data Layer:** A single-flag switch between an offline mock provider and live Supabase.
+
+---
+
+### 🏗️ Key Technical Architecture Features
 
 #### 1. Bilingual & RTL Directionality (First-Class Arabic Support)
 - **Instant Language Swapping:** Dynamic bilingual context switching (عربي / English) with instantaneous document reflowing (`dir="rtl"` vs `dir="ltr"`).
@@ -34,7 +89,25 @@
 
 ---
 
-### Local Installation & Running Instructions
+### 📁 Project Structure
+A high-level map of the major folders (individual files omitted for brevity):
+```
+src/
+├── app/                # Next.js App Router pages + API
+│   ├── (screens)       # login, dashboard, chat, reports, transactions, profile
+│   └── api/chat/       # AI chat endpoint (mock + OpenAI paths)
+├── components/         # Shared UI (Header, BottomNav, ResponsiveFrame)
+├── context/            # LanguageContext (AR/EN, RTL/LTR)
+├── lib/
+│   ├── data/           # Data abstraction: types, config, Mock & Supabase providers
+│   └── simulator/      # Decision-simulation engine (manager, modules, utils)
+├── locales/            # ar.ts / en.ts translations
+└── store/              # Zustand global store
+```
+
+---
+
+### ⚙️ Local Installation & Running Instructions
 
 #### Prerequisites
 - Node.js (version 18 or 20)
@@ -51,7 +124,7 @@
    ```
 3. Open [http://localhost:3000](http://localhost:3000) in your web browser.
 
-#### Demo Credentials
+#### 🔑 Demo Credentials
 - **Email:** `demo@alinma.sa`
 - **Password:** `Demo1234`
 - *(Use the "Sign In as Demo User" button for automatic submission)*
@@ -63,20 +136,53 @@
 
 ---
 
-### Deployment & Live URLs
+### 🌐 Deployment & Live URLs
 - **Live Production Application:** [https://ma3ak-alinma.vercel.app](https://ma3ak-alinma.vercel.app)
-- **Repository Visibility:** Strictly **PRIVATE** (Only accessible to you) to secure the hackathon intellectual property.
+- **Repository Visibility:** **Public** — openly available for the hackathon judges and the developer community to review.
 
 ---
 
 ## 🇸🇦 النسخة العربية
 
-### نظرة عامة على المشروع
+### 📖 نظرة عامة على المشروع
 **معك (Ma3ak)** هو نموذج أولى ذو جودة عالية لمساعد مالي شخصي مدمج في تطبيق مصرف الإنماء للهواتف المحمولة. يعمل هذا النظام مدعوماً بالذكاء الاصطناعي (OpenAI `gpt-4o-mini`) ليكون بمثابة مستشار مالي استباقي يحلل سجل العمليات التاريخية للعميل لإعداد تقارير نشاط دقيقة، ومراجعة العادات الاستهلاكية الحالية، والتنبؤ بالعواقب المالية للقرارات المستقبلية باستخدام المحاكاة الديناميكية. تم بناء المشروع لصالح **هاكاثون أَمَدْ** التابع لـ **أكاديمية طويق** برعاية **مصرف الإنماء**.
 
 ---
 
-### المميزات التقنية والمعمارية الأساسية
+### 🚀 النسخة الحية (Live Demo)
+- **رابط التطبيق المباشر:** **[ma3ak-alinma.vercel.app](https://ma3ak-alinma.vercel.app)**
+- **أسرع طريقة للتجربة:** افتح الرابط ← اضغط **"الدخول كمستخدم تجريبي"** .
+
+---
+
+### 🧩 التقنيات المستخدمة (Tech Stack)
+| الطبقة | التقنيات |
+|---|---|
+| **إطار العمل** | Next.js 14 (App Router)، React 18 |
+| **لغة البرمجة** | TypeScript |
+| **التصميم والواجهات** | Tailwind CSS، shadcn/ui، Framer Motion |
+| **إدارة الحالة** | Zustand |
+| **الذكاء الاصطناعي** | OpenAI `gpt-4o-mini` |
+| **طبقة البيانات** | Supabase (PostgreSQL) عبر `@supabase/supabase-js`، إضافة إلى محاكي محلي `localStorage` |
+| **الرسوم البيانية** | Recharts |
+| **تصدير PDF** | jsPDF + html2canvas |
+| **الأيقونات** | Lucide React |
+| **النشر** | Vercel |
+
+---
+
+### ✨ المميزات الرئيسية
+- 🤖 **المستشار المالي الذكي (معك):** مساعد محادثة مدمج في التطبيق البنكي يفهم اللغة العربية الطبيعية (بما فيها اللهجة السعودية) ويحلل بيانات عمليات العميل الفعلية.
+- 📊 **التقارير المالية:** تقارير إنفاق لأي فترة زمنية مع تصنيف الفئات، ورسم بياني دائري مدمج، وتصدير PDF.
+- 🔍 **تحليل عادات الصرف:** مراجعة استباقية للسلوك الأخير (مثل ارتفاع صرف التوصيل وتوقّف خطة الادخار).
+- 🧮 **محاكاة القرارات:** التنبؤ بأثر القرارات المالية الكبرى (سيارة، قرض، سفر...) عبر عدة سيناريوهات مع مسار متوقّع للرصيد.
+- 🌐 **ثنائية اللغة ودعم RTL:** دعم كامل للعربية (RTL) والإنجليزية (LTR) مع تبديل فوري.
+- 📱 **تجربة أصيلة:** تصميم للهاتف أولاً، مغلّف بإطار هاتف افتراضي على الحاسب المكتبي.
+- 🗄️ **طبقة بيانات مرنة:** تبديل بمتغير واحد بين المحاكي المحلي وقاعدة Supabase الحية.
+
+---
+
+### 🏗️ المميزات التقنية والمعمارية الأساسية
 
 #### ١. دعم ثنائي اللغة والاتجاه (RTL / LTR)
 - **تبديل فوري للغة:** نظام تبديل ديناميكي فوري بين العربية والإنجليزية مع إعادة توجيه كامل لاتجاه الصفحة وعناصر واجهة المستخدم.
@@ -98,7 +204,25 @@
 
 ---
 
-### طريقة التشغيل والتنصيب المحلي
+### 📁 هيكل المشروع
+خريطة مختصرة للمجلدات الرئيسية (بدون ذكر كل ملف):
+```
+src/
+├── app/                # صفحات Next.js (App Router) + الـ API
+│   ├── (الشاشات)       # login, dashboard, chat, reports, transactions, profile
+│   └── api/chat/       # مسار المحادثة الذكية (المحاكي + OpenAI)
+├── components/         # مكوّنات واجهة مشتركة (Header, BottomNav, ResponsiveFrame)
+├── context/            # LanguageContext (عربي/إنجليزي، RTL/LTR)
+├── lib/
+│   ├── data/           # طبقة تجريد البيانات: types, config, مزوّدا Mock و Supabase
+│   └── simulator/      # محرك محاكاة القرارات (manager, modules, utils)
+├── locales/            # ملفات الترجمة ar.ts / en.ts
+└── store/              # مخزن الحالة العام (Zustand)
+```
+
+---
+
+### ⚙️ طريقة التشغيل والتنصيب المحلي
 
 #### المتطلبات
 - بيئة تشغيل Node.js (الإصدار 18 أو 20)
@@ -115,7 +239,7 @@
    ```
 3. افتح الرابط التالي في المتصفح: [http://localhost:3000](http://localhost:3000).
 
-#### معلومات الدخول الافتراضية للجنة التحكيم
+#### 🔑 معلومات الدخول الافتراضية للجنة التحكيم
 - **البريد الإلكتروني:** `demo@alinma.sa`
 - **كلمة المرور:** `Demo1234`
 - *(استخدم زر "الدخول كمستخدم تجريبي" لتعبئة البيانات تلقائياً)*
@@ -126,6 +250,7 @@
 - **لوحة الهوية المصرفية التفاعلية:** بجانب إطار الهاتف، يتم عرض لوحة سطح مكتب مخصصة مفعمة بالهوية البصرية لمصرف الإنماء مع شعار "معك"، والعبارة التحفيزية ("مستشارك المالي الذكي")، وزخارف هندسية مستوحاة من التراث السعودي، وخلفية ديناميكية متدرجة الألوان تجمع بين لوني الإنماء (الكحلي `#1B2A4A` والبنفسجي `#7C6FD4`).
 
 ---
-### النشر والروابط الحية للمشروع
+
+### 🌐 النشر والروابط الحية للمشروع
 - **رابط التطبيق المباشر (Vercel):** [https://ma3ak-alinma.vercel.app](https://ma3ak-alinma.vercel.app)
-- **خصوصية كود المشروع:** المستودع **خاص وآمن (PRIVATE)** بالكامل (متاح لك فقط) لحماية الفكرة وتفاصيل النموذج قبل المنافسة والتحكيم.
+- **حالة المستودع:** **عام (Public)** — متاح للجنة التحكيم والمطوّرين للاطلاع على الكود ومراجعته.
