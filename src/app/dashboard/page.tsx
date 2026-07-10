@@ -16,6 +16,7 @@ import {
   ArrowUpRight, ArrowDownLeft
 } from "lucide-react";
 import { getCategoryIcon } from "../../lib/utils";
+import { deriveToday } from "../../lib/finance/calculations";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -92,7 +93,7 @@ export default function DashboardPage() {
       description: isRtl 
         ? `تحويل سريع إلى ${transferRecipient} - مصرف ${transferBank}`
         : `Transfer to ${transferRecipient} via ${transferBank}`,
-      transaction_date: new Date().toISOString().split("T")[0]
+      transaction_date: transactions.length > 0 ? deriveToday(transactions) : new Date().toISOString().split("T")[0]
     });
 
     setTransferSuccess(true);
@@ -115,7 +116,7 @@ export default function DashboardPage() {
       description: isRtl 
         ? `سداد فاتورة مفوترة - ${merchant}`
         : `Utility Invoice Payment - ${merchant}`,
-      transaction_date: new Date().toISOString().split("T")[0]
+      transaction_date: transactions.length > 0 ? deriveToday(transactions) : new Date().toISOString().split("T")[0]
     });
 
     setBillsPaid(prev => ({ ...prev, [billId]: true }));

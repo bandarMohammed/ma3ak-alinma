@@ -90,10 +90,11 @@ export default function ChatPage() {
         category: "Bills & Utilities",
         merchant,
         description: isRtl ? `سداد التزام - ${merchant}` : `Commitment Payment - ${merchant}`,
-        transaction_date: new Date().toISOString().split("T")[0]
+        transaction_date: transactions.length > 0 ? deriveToday(transactions) : new Date().toISOString().split("T")[0]
       });
       setToastMessage(isRtl ? "تم سداد الالتزام بنجاح ✓" : "Commitment paid successfully ✓");
       setTimeout(() => setToastMessage(null), 3000);
+
       
       // Refresh transactions state in the store so the newly logged transaction is in store
       await useStore.getState().fetchTransactions();
