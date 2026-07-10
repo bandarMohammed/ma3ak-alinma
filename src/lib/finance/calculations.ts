@@ -30,10 +30,35 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 // Primitives
 // ----------------------------------------------------------------------------
 
-/** "Today" for all windows = the latest transaction date (survives data regeneration). */
+/**
+ * "Today" for the simulated timeline.
+ * 
+ * The seed data is anchored around a specific date (May 29, 2026). If a user
+ * pays a commitment or creates a transaction while the real system date is far
+ * in the future (e.g. July 2026), a naive "max date" would jump the entire
+ * timeline forward, breaking all date-range filters (reports, habits, etc.).
+ *
+ * Strategy: sort all distinct dates, use the 95th-percentile date as the anchor.
+ * If the absolute max is more than 45 days beyond that anchor, it's an outlier
+ * from a real-clock transaction — ignore it.
+ */
 export function deriveToday(txs: Transaction[]): string {
   if (!txs.length) return new Date().toISOString().split("T")[0];
-  return txs.reduce((max, t) => (t.transaction_date > max ? t.transaction_date : max), txs[0].transaction_date);
+
+  const dates = [...new Set(txs.map(t => t.transaction_date))].sort();
+  if (dates.length <= 2) return dates[dates.length - 1];
+
+  // 95th percentile date (ignores top 5% outliers)
+  const p95Idx = Math.min(dates.length - 1, Math.floor(dates.length * 0.95));
+  const anchorDate = dates[p95Idx];
+  const maxDate = dates[dates.length - 1];
+
+  // If max is more than 45 days beyond the p95 anchor, it's an outlier
+  const anchorMs = new Date(anchorDate).getTime();
+  const maxMs = new Date(maxDate).getTime();
+  const daysDiff = (maxMs - anchorMs) / (1000 * 60 * 60 * 24);
+
+  return daysDiff > 45 ? anchorDate : maxDate;
 }
 
 const monthOf = (t: Transaction) => t.transaction_date.slice(0, 7); // YYYY-MM
@@ -506,5 +531,279 @@ export function computeCommitments(
     total_paid: round2(total_paid),
     paid_percentage,
     commitments_list
+  };
+}
+
+// ----------------------------------------------------------------------------
+// Financial Summary — injected into the AI system prompt so it can answer
+// ANY question about the user's finances. All numbers computed by CODE.
+// ----------------------------------------------------------------------------
+
+export interface FinancialSummary {
+  text: string;          // Human-readable summary for the system prompt
+  balance: number;
+  monthlyIncome: number;
+  monthlyExpenses: number;
+  monthlySurplus: number;
+  lastTransfer: { date: string; merchant: string; amount: number } | null;
+  lastTransactions: { date: string; merchant: string; amount: number; type: string; category: string }[];
+  topMerchants: { merchant: string; total: number; count: number }[];
+  categoryBreakdown: { category: string; amount: number; pct: number }[];
+}
+
+/**
+ * Builds a comprehensive financial context string that gets injected into the
+ * AI system prompt. This allows the AI to answer ANY question about the user's
+ * financial life — "what's my balance?", "last transfer?", "how much did I spend
+ * on coffee?", etc.
+ *
+ * IMPORTANT: Every single number here is computed by this code function.
+ * The AI receives the finished numbers and phrases them — it never computes.
+ */
+export function buildFinancialSummary(
+  txs: Transaction[],
+  balance: number,
+  language: "ar" | "en"
+): FinancialSummary {
+  const isArabic = language === "ar";
+  const today = deriveToday(txs);
+  const currentMonth = today.slice(0, 7);
+  const fmt = (n: number) => Math.round(n).toLocaleString();
+
+  // --- Core averages ---
+  const monthlyIncome = avgMonthlyIncome(txs) || 0;
+  const monthlyExpenses = avgMonthlyOutflow(txs) + detectFinancingPayments(txs);
+  const monthlySurplus = monthlyIncome - monthlyExpenses;
+  const savingsTransfer = typicalMonthlySaving(txs);
+
+  // --- Current month transactions ---
+  const currentMonthTxs = txs.filter(t => t.transaction_date.startsWith(currentMonth));
+  const currentMonthDebits = currentMonthTxs.filter(t => t.type === "debit");
+  const currentMonthCredits = currentMonthTxs.filter(t => t.type === "credit");
+  const thisMonthSpent = currentMonthDebits.reduce((s, t) => s + t.amount, 0);
+  const thisMonthIncome = currentMonthCredits.reduce((s, t) => s + t.amount, 0);
+
+  // --- Last 10 transactions (sorted newest first) ---
+  const sortedTxs = [...txs].sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
+  const last10 = sortedTxs.slice(0, 10).map(t => ({
+    date: t.transaction_date,
+    merchant: t.merchant,
+    amount: t.amount,
+    type: t.type,
+    category: t.category
+  }));
+
+  // --- Last transfer ---
+  const lastTransfer = sortedTxs.find(t =>
+    t.category === "Transfers" ||
+    t.merchant.toLowerCase().includes("تحويل") ||
+    t.merchant.toLowerCase().includes("transfer") ||
+    t.description.toLowerCase().includes("تحويل") ||
+    t.description.toLowerCase().includes("transfer")
+  );
+  const lastTransferInfo = lastTransfer ? {
+    date: lastTransfer.transaction_date,
+    merchant: lastTransfer.merchant,
+    amount: lastTransfer.amount
+  } : null;
+
+  // --- Last salary / income ---
+  const lastSalary = sortedTxs.find(t => t.type === "credit");
+
+  // --- Category breakdown (current month) ---
+  const catMap: Record<string, number> = {};
+  currentMonthDebits.forEach(t => {
+    catMap[t.category] = (catMap[t.category] || 0) + t.amount;
+  });
+  const categoryBreakdown = Object.entries(catMap)
+    .map(([category, amount]) => ({
+      category,
+      amount: round2(amount),
+      pct: thisMonthSpent > 0 ? Math.round((amount / thisMonthSpent) * 100) : 0
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  // --- Top merchants (current month) ---
+  const merchantMap: Record<string, { total: number; count: number }> = {};
+  currentMonthDebits.forEach(t => {
+    if (!merchantMap[t.merchant]) merchantMap[t.merchant] = { total: 0, count: 0 };
+    merchantMap[t.merchant].total += t.amount;
+    merchantMap[t.merchant].count++;
+  });
+  const topMerchants = Object.entries(merchantMap)
+    .map(([merchant, { total, count }]) => ({ merchant, total: round2(total), count }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 8);
+
+  // --- Specific category queries (for quick answers) ---
+  const coffeeSpend = currentMonthDebits
+    .filter(t => t.merchant.toLowerCase().includes("starbucks") || t.merchant.toLowerCase().includes("arabica") || t.merchant.toLowerCase().includes("barns") || t.description.toLowerCase().includes("قهوة") || t.description.toLowerCase().includes("coffee"))
+    .reduce((s, t) => s + t.amount, 0);
+  const foodDeliverySpend = currentMonthDebits
+    .filter(t => t.merchant === "Hungerstation" || t.merchant === "Jahez")
+    .reduce((s, t) => s + t.amount, 0);
+  const grocerySpend = currentMonthDebits
+    .filter(t => t.description.toLowerCase().includes("مقاضي") || t.description.toLowerCase().includes("groceries"))
+    .reduce((s, t) => s + t.amount, 0);
+  const fuelSpend = currentMonthDebits
+    .filter(t => t.description.toLowerCase().includes("وقود") || t.description.toLowerCase().includes("fuel") || t.merchant.toLowerCase().includes("petrol"))
+    .reduce((s, t) => s + t.amount, 0);
+
+  // --- Fixed commitments detection ---
+  const fixedMerchants = ["Emaar Real Estate", "stc pay", "Mobily Home Internet", "Netflix", "Tawuniya Insurance", "Alinma Auto Finance", "Saudi Electricity Co.", "National Water Company"];
+  const commitments = fixedMerchants.map(m => {
+    const merchantTxs = txs.filter(t => t.merchant === m && t.type === "debit");
+    if (merchantTxs.length < 3) return null;
+    const avg = Math.round(merchantTxs.reduce((s, t) => s + t.amount, 0) / merchantTxs.length);
+    const days = merchantTxs.map(t => parseInt(t.transaction_date.slice(8, 10)));
+    const avgDay = Math.round(days.reduce((s, d) => s + d, 0) / days.length);
+    const paidThisMonth = currentMonthDebits.filter(t => t.merchant === m).reduce((s, t) => s + t.amount, 0);
+    return { merchant: m, expectedAmount: avg, dueDay: avgDay, paidThisMonth: round2(paidThisMonth) };
+  }).filter(Boolean);
+
+  // --- Biggest single transaction this month ---
+  const biggestThisMonth = currentMonthDebits.length > 0
+    ? currentMonthDebits.reduce((max, t) => t.amount > max.amount ? t : max, currentMonthDebits[0])
+    : null;
+
+  // --- Build the text summary ---
+  const lines: string[] = [];
+
+  if (isArabic) {
+    lines.push(`=== السياق المالي للعميل (محسوب بالنظام — الأرقام نهائية لا تعيد حسابها) ===`);
+    lines.push(``);
+    lines.push(`📅 تاريخ اليوم في النظام: ${today}`);
+    lines.push(`💰 الرصيد الحالي: ${fmt(balance)} ريال سعودي`);
+    lines.push(`📊 متوسط الدخل الشهري: ${fmt(monthlyIncome)} ريال (${lastSalary ? lastSalary.merchant : "غير محدد"}, يوم ${lastSalary ? lastSalary.transaction_date.slice(8, 10) : "27"} من كل شهر)`);
+    lines.push(`📉 متوسط المصروفات الشهرية: ${fmt(monthlyExpenses)} ريال`);
+    lines.push(`📈 الفائض الشهري التقديري: ${fmt(monthlySurplus)} ريال`);
+    lines.push(`🏦 تحويل ادخاري معتاد: ${fmt(savingsTransfer)} ريال/شهر`);
+    lines.push(``);
+    lines.push(`--- إحصائيات الشهر الحالي (${currentMonth}) ---`);
+    lines.push(`إجمالي الدخل هذا الشهر: ${fmt(thisMonthIncome)} ريال`);
+    lines.push(`إجمالي المصروفات هذا الشهر: ${fmt(thisMonthSpent)} ريال`);
+    lines.push(`عدد المعاملات هذا الشهر: ${currentMonthTxs.length} معاملة`);
+    lines.push(``);
+
+    if (biggestThisMonth) {
+      lines.push(`🔴 أكبر مصروف هذا الشهر: ${biggestThisMonth.merchant} — ${fmt(biggestThisMonth.amount)} ريال (${biggestThisMonth.transaction_date})`);
+    }
+
+    lines.push(``);
+    lines.push(`--- آخر 10 معاملات ---`);
+    last10.forEach((t, i) => {
+      const sign = t.type === "credit" ? "+" : "-";
+      lines.push(`${i + 1}. ${t.date} | ${t.merchant} | ${sign}${fmt(t.amount)} ريال | ${t.category}`);
+    });
+
+    lines.push(``);
+    if (lastTransferInfo) {
+      lines.push(`💸 آخر تحويل/حوالة: ${lastTransferInfo.date} | ${lastTransferInfo.merchant} | ${fmt(lastTransferInfo.amount)} ريال`);
+    } else {
+      lines.push(`💸 لا يوجد تحويلات مسجلة.`);
+    }
+
+    lines.push(``);
+    lines.push(`--- توزيع الصرف حسب الفئة (هذا الشهر) ---`);
+    categoryBreakdown.forEach(c => {
+      lines.push(`• ${c.category}: ${fmt(c.amount)} ريال (${c.pct}%)`);
+    });
+
+    lines.push(``);
+    lines.push(`--- أعلى التجار صرفاً (هذا الشهر) ---`);
+    topMerchants.forEach((m, i) => {
+      lines.push(`${i + 1}. ${m.merchant}: ${fmt(m.total)} ريال (${m.count} معاملة)`);
+    });
+
+    lines.push(``);
+    lines.push(`--- مصروفات محددة (هذا الشهر) ---`);
+    lines.push(`☕ القهوة: ${fmt(coffeeSpend)} ريال`);
+    lines.push(`🍔 توصيل الطعام (هنقرستيشن + جاهز): ${fmt(foodDeliverySpend)} ريال`);
+    lines.push(`🛒 البقالة/المقاضي: ${fmt(grocerySpend)} ريال`);
+    lines.push(`⛽ الوقود: ${fmt(fuelSpend)} ريال`);
+
+    lines.push(``);
+    lines.push(`--- الالتزامات الثابتة الشهرية ---`);
+    commitments.forEach((c: any) => {
+      const status = c.paidThisMonth >= c.expectedAmount ? "✅ مسدد" : "⏳ لم يُسدد بعد";
+      lines.push(`• ${c.merchant}: ${fmt(c.expectedAmount)} ريال (يوم ${c.dueDay}) — ${status}`);
+    });
+
+    lines.push(``);
+    lines.push(`=== نهاية السياق المالي ===`);
+  } else {
+    lines.push(`=== CLIENT FINANCIAL CONTEXT (computed by system — numbers are final, do not recalculate) ===`);
+    lines.push(``);
+    lines.push(`📅 System Date: ${today}`);
+    lines.push(`💰 Current Balance: ${fmt(balance)} SAR`);
+    lines.push(`📊 Avg Monthly Income: ${fmt(monthlyIncome)} SAR (${lastSalary ? lastSalary.merchant : "N/A"}, day ${lastSalary ? lastSalary.transaction_date.slice(8, 10) : "27"})`);
+    lines.push(`📉 Avg Monthly Expenses: ${fmt(monthlyExpenses)} SAR`);
+    lines.push(`📈 Estimated Monthly Surplus: ${fmt(monthlySurplus)} SAR`);
+    lines.push(`🏦 Typical Monthly Savings Transfer: ${fmt(savingsTransfer)} SAR/month`);
+    lines.push(``);
+    lines.push(`--- Current Month Stats (${currentMonth}) ---`);
+    lines.push(`Total Income This Month: ${fmt(thisMonthIncome)} SAR`);
+    lines.push(`Total Expenses This Month: ${fmt(thisMonthSpent)} SAR`);
+    lines.push(`Transaction Count This Month: ${currentMonthTxs.length}`);
+    lines.push(``);
+
+    if (biggestThisMonth) {
+      lines.push(`🔴 Biggest Expense This Month: ${biggestThisMonth.merchant} — ${fmt(biggestThisMonth.amount)} SAR (${biggestThisMonth.transaction_date})`);
+    }
+
+    lines.push(``);
+    lines.push(`--- Last 10 Transactions ---`);
+    last10.forEach((t, i) => {
+      const sign = t.type === "credit" ? "+" : "-";
+      lines.push(`${i + 1}. ${t.date} | ${t.merchant} | ${sign}${fmt(t.amount)} SAR | ${t.category}`);
+    });
+
+    lines.push(``);
+    if (lastTransferInfo) {
+      lines.push(`💸 Last Transfer: ${lastTransferInfo.date} | ${lastTransferInfo.merchant} | ${fmt(lastTransferInfo.amount)} SAR`);
+    } else {
+      lines.push(`💸 No transfers recorded.`);
+    }
+
+    lines.push(``);
+    lines.push(`--- Spending by Category (This Month) ---`);
+    categoryBreakdown.forEach(c => {
+      lines.push(`• ${c.category}: ${fmt(c.amount)} SAR (${c.pct}%)`);
+    });
+
+    lines.push(``);
+    lines.push(`--- Top Merchants (This Month) ---`);
+    topMerchants.forEach((m, i) => {
+      lines.push(`${i + 1}. ${m.merchant}: ${fmt(m.total)} SAR (${m.count} transactions)`);
+    });
+
+    lines.push(``);
+    lines.push(`--- Specific Spending (This Month) ---`);
+    lines.push(`☕ Coffee: ${fmt(coffeeSpend)} SAR`);
+    lines.push(`🍔 Food Delivery (Hungerstation + Jahez): ${fmt(foodDeliverySpend)} SAR`);
+    lines.push(`🛒 Groceries: ${fmt(grocerySpend)} SAR`);
+    lines.push(`⛽ Fuel: ${fmt(fuelSpend)} SAR`);
+
+    lines.push(``);
+    lines.push(`--- Fixed Monthly Commitments ---`);
+    commitments.forEach((c: any) => {
+      const status = c.paidThisMonth >= c.expectedAmount ? "✅ Paid" : "⏳ Not yet paid";
+      lines.push(`• ${c.merchant}: ${fmt(c.expectedAmount)} SAR (day ${c.dueDay}) — ${status}`);
+    });
+
+    lines.push(``);
+    lines.push(`=== END FINANCIAL CONTEXT ===`);
+  }
+
+  return {
+    text: lines.join("\n"),
+    balance,
+    monthlyIncome,
+    monthlyExpenses,
+    monthlySurplus,
+    lastTransfer: lastTransferInfo,
+    lastTransactions: last10,
+    topMerchants,
+    categoryBreakdown
   };
 }
