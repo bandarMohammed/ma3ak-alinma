@@ -74,22 +74,17 @@ export async function POST(req: Request) {
     ];
     const isSimulationQuery = simulationKeywords.some(keyword => queryLower.includes(keyword));
 
-    const isReportQuery =
+    const isCommitmentsQuery =
       !isSimulationQuery && (
-        queryLower.includes("report") ||
-        queryLower.includes("تقرير") ||
-        queryLower.includes("صرفي") ||
-        queryLower.includes("history") ||
-        queryLower.includes("spent") ||
-        queryLower.includes("week") ||
-        queryLower.includes("month") ||
-        queryLower.includes("أسبوع") ||
-        queryLower.includes("شهر") ||
-        queryLower.includes("تاريخ")
+        queryLower.includes("commitment") ||
+        queryLower.includes("commitments") ||
+        queryLower.includes("التزام") ||
+        queryLower.includes("التزامات") ||
+        queryLower.includes("التزاماتي")
       );
 
     const isHabitsQuery =
-      !isSimulationQuery && !isReportQuery && (
+      !isSimulationQuery && !isCommitmentsQuery && (
         queryLower.includes("habits") ||
         queryLower.includes("عادات") ||
         queryLower.includes("أحوالي") ||
@@ -101,13 +96,18 @@ export async function POST(req: Request) {
         queryLower.includes("أموري")
       );
 
-    const isCommitmentsQuery =
-      !isSimulationQuery && !isReportQuery && !isHabitsQuery && (
-        queryLower.includes("commitment") ||
-        queryLower.includes("commitments") ||
-        queryLower.includes("التزام") ||
-        queryLower.includes("التزامات") ||
-        queryLower.includes("التزاماتي")
+    const isReportQuery =
+      !isSimulationQuery && !isCommitmentsQuery && !isHabitsQuery && (
+        queryLower.includes("report") ||
+        queryLower.includes("تقرير") ||
+        queryLower.includes("صرفي") ||
+        queryLower.includes("history") ||
+        queryLower.includes("spent") ||
+        queryLower.includes("week") ||
+        queryLower.includes("month") ||
+        queryLower.includes("أسبوع") ||
+        queryLower.includes("شهر") ||
+        queryLower.includes("تاريخ")
       );
 
     // CAPABILITY 3 — DECISION SIMULATION (deterministic conversation + math)
