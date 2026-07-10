@@ -13,7 +13,7 @@ import { Transaction } from "./types";
 // ============================================================================
 
 /** Bump to force existing localStorage to re-seed with the new dataset. */
-export const SEED_VERSION = 3;
+export const SEED_VERSION = 4;
 
 const MONTHS = 14;
 const TODAY = new Date(2026, 4, 29); // local anchor (May 29 2026); Step-1 derives "today" from max tx date
