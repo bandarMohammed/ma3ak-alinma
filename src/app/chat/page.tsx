@@ -16,9 +16,9 @@ import {
   FileText, TrendingUp, AlertCircle, Sparkle, BarChart, Gauge, Activity,
   CheckCircle2, AlertTriangle, Coins, X
 } from "lucide-react";
-import { getCategoryIcon } from "../../lib/utils";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import { computeCommitments, deriveToday } from "../../lib/finance/calculations";
 
 export default function ChatPage() {
   const router = useRouter();
@@ -56,6 +56,32 @@ export default function ChatPage() {
   const [editCommitmentExpectedAmount, setEditCommitmentExpectedAmount] = useState("");
   const [editCommitmentDueDate, setEditCommitmentDueDate] = useState("15");
 
+  // Commitment Detail & Payment Confirmation States
+  const [selectedCommitmentDetails, setSelectedCommitmentDetails] = useState<any>(null);
+  const [paymentConfirmation, setPaymentConfirmation] = useState<{ merchant: string; amount: number } | null>(null);
+
+  const refreshCommitmentsLocalData = () => {
+    const custom = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("ma3ak_custom_commitments") || "[]") : [];
+    const deleted = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("ma3ak_deleted_commitments") || "[]") : [];
+    const latestTxs = useStore.getState().transactions;
+    const updatedData = computeCommitments(latestTxs, language, custom, deleted);
+    
+    const updatedMessages = messages.map(msg => {
+      if (msg.metadata?.type === "commitments") {
+        return {
+          ...msg,
+          metadata: {
+            ...msg.metadata,
+            commitmentsData: updatedData
+          }
+        };
+      }
+      return msg;
+    });
+    
+    useStore.setState({ messages: updatedMessages });
+  };
+
   const handlePayCommitment = async (merchant: string, amount: number) => {
     try {
       await createTransaction({
@@ -69,10 +95,11 @@ export default function ChatPage() {
       setToastMessage(isRtl ? "تم سداد الالتزام بنجاح ✓" : "Commitment paid successfully ✓");
       setTimeout(() => setToastMessage(null), 3000);
       
-      // Auto-refresh the list
-      setTimeout(() => {
-        handleSendMessage(isRtl ? "عرض التزاماتي هذا الشهر" : "Show my commitments this month");
-      }, 1000);
+      // Refresh transactions state in the store so the newly logged transaction is in store
+      await useStore.getState().fetchTransactions();
+      
+      // Recompute and update the UI card locally
+      refreshCommitmentsLocalData();
     } catch (err) {
       console.error(err);
     }
@@ -118,10 +145,8 @@ export default function ChatPage() {
     setToastMessage(isRtl ? "تم إضافة الالتزام بنجاح ✓" : "Commitment added successfully ✓");
     setTimeout(() => setToastMessage(null), 3000);
 
-    // Refresh list
-    setTimeout(() => {
-      handleSendMessage(isRtl ? "عرض التزاماتي هذا الشهر" : "Show my commitments this month");
-    }, 500);
+    // Recompute and update the UI card locally
+    refreshCommitmentsLocalData();
   };
 
   const handleStartEditCommitment = (c: any) => {
@@ -169,10 +194,8 @@ export default function ChatPage() {
     setToastMessage(isRtl ? "تم تعديل الالتزام بنجاح ✓" : "Commitment updated successfully ✓");
     setTimeout(() => setToastMessage(null), 3000);
 
-    // Refresh list
-    setTimeout(() => {
-      handleSendMessage(isRtl ? "عرض التزاماتي هذا الشهر" : "Show my commitments this month");
-    }, 500);
+    // Recompute and update the UI card locally
+    refreshCommitmentsLocalData();
   };
 
   const handleDeleteCommitment = (merchant: string) => {
@@ -191,10 +214,8 @@ export default function ChatPage() {
     setToastMessage(isRtl ? "تم حذف الالتزام بنجاح ✓" : "Commitment deleted successfully ✓");
     setTimeout(() => setToastMessage(null), 3000);
 
-    // Refresh list
-    setTimeout(() => {
-      handleSendMessage(isRtl ? "عرض التزاماتي هذا الشهر" : "Show my commitments this month");
-    }, 500);
+    // Recompute and update the UI card locally
+    refreshCommitmentsLocalData();
   };
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -1083,7 +1104,8 @@ export default function ChatPage() {
                                   return (
                                     <div 
                                       key={c.id} 
-                                      className={`p-4 rounded-2xl border transition-all duration-300 relative ${
+                                      onClick={() => setSelectedCommitmentDetails(c)}
+                                      className={`p-4 rounded-2xl border transition-all duration-300 relative cursor-pointer hover:border-brand-purple/30 ${
                                         isCompleted 
                                           ? "bg-brand-success/5 border-brand-success/15" 
                                           : "bg-brand-cream/20 border-brand-navy/5"
@@ -1094,7 +1116,7 @@ export default function ChatPage() {
                                         {/* Actions: Edit, Delete */}
                                         <div className="flex items-center gap-1">
                                           <button
-                                            onClick={() => handleStartEditCommitment(c)}
+                                            onClick={(e) => { e.stopPropagation(); handleStartEditCommitment(c); }}
                                             className="p-1 rounded-lg text-brand-navy/35 hover:text-brand-purple hover:bg-brand-purple/5 transition-all focus:outline-none"
                                             title={isRtl ? "تعديل" : "Edit"}
                                           >
@@ -1103,7 +1125,7 @@ export default function ChatPage() {
                                             </svg>
                                           </button>
                                           <button
-                                            onClick={() => handleDeleteCommitment(c.merchant)}
+                                            onClick={(e) => { e.stopPropagation(); handleDeleteCommitment(c.merchant); }}
                                             className="p-1 rounded-lg text-brand-navy/35 hover:text-brand-danger hover:bg-brand-danger/5 transition-all focus:outline-none"
                                             title={isRtl ? "حذف" : "Delete"}
                                           >
@@ -1156,7 +1178,7 @@ export default function ChatPage() {
                                         </span>
                                         {!isCompleted && (
                                           <button
-                                            onClick={() => handlePayCommitment(c.merchant, c.expectedAmount)}
+                                            onClick={(e) => { e.stopPropagation(); setPaymentConfirmation({ merchant: c.merchant, amount: c.expectedAmount }); }}
                                             className="px-2.5 py-1 bg-brand-navy text-white text-[8px] font-black rounded-lg hover:bg-brand-navy/90 shadow-sm transition-all focus:outline-none flex items-center gap-1"
                                           >
                                             <Coins className="w-3 h-3" />
@@ -1577,6 +1599,240 @@ export default function ChatPage() {
                   <span>{isRtl ? "تأكيد التعديل" : "Confirm Edit"}</span>
                 </motion.button>
               </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* COMMITMENT DETAILS MODAL */}
+      <AnimatePresence>
+        {selectedCommitmentDetails && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-brand-navy/60 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4"
+          >
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 220 }}
+              className="bg-white rounded-t-[32px] md:rounded-3xl w-full max-w-md max-h-[85vh] p-6 relative border border-brand-navy/5 shadow-2xl space-y-5 text-right overflow-y-auto"
+            >
+              {/* Modal Header */}
+              <div className="flex justify-between items-center pb-2 border-b border-brand-navy/5">
+                <button
+                  onClick={() => setSelectedCommitmentDetails(null)}
+                  className="p-1.5 rounded-full bg-brand-cream/50 text-brand-navy/60 hover:bg-brand-cream hover:text-brand-navy transition-colors focus:outline-none"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">{selectedCommitmentDetails.emoji || "📋"}</span>
+                  <h3 className="text-base font-black text-brand-navy">
+                    {selectedCommitmentDetails.merchant}
+                  </h3>
+                </div>
+              </div>
+
+              {/* General Info Grid */}
+              <div className="grid grid-cols-2 gap-3.5 text-xs">
+                <div className="bg-brand-cream/35 p-3 rounded-2xl border border-brand-navy/5 space-y-1">
+                  <span className="text-[8px] font-bold text-brand-navy/40 block uppercase tracking-wide">
+                    {isRtl ? "التصنيف" : "Category"}
+                  </span>
+                  <span className="font-extrabold text-brand-navy">
+                    {selectedCommitmentDetails.category}
+                  </span>
+                </div>
+                <div className="bg-brand-cream/35 p-3 rounded-2xl border border-brand-navy/5 space-y-1">
+                  <span className="text-[8px] font-bold text-brand-navy/40 block uppercase tracking-wide">
+                    {isRtl ? "تاريخ الاستحقاق" : "Due Date"}
+                  </span>
+                  <span className="font-extrabold text-brand-navy">
+                    {isRtl ? `يوم ${selectedCommitmentDetails.dueDate} من الشهر` : `Day ${selectedCommitmentDetails.dueDate} of Month`}
+                  </span>
+                </div>
+                <div className="bg-brand-cream/35 p-3 rounded-2xl border border-brand-navy/5 space-y-1">
+                  <span className="text-[8px] font-bold text-brand-navy/40 block uppercase tracking-wide">
+                    {isRtl ? "المدفوع هذا الشهر" : "Paid This Month"}
+                  </span>
+                  <span className="font-extrabold text-brand-success">
+                    {selectedCommitmentDetails.paidAmount.toLocaleString()} {t("sar")}
+                  </span>
+                </div>
+                <div className="bg-brand-cream/35 p-3 rounded-2xl border border-brand-navy/5 space-y-1">
+                  <span className="text-[8px] font-bold text-brand-navy/40 block uppercase tracking-wide">
+                    {isRtl ? "المبلغ المتوقع" : "Expected Amount"}
+                  </span>
+                  <span className="font-extrabold text-brand-navy">
+                    {selectedCommitmentDetails.expectedAmount.toLocaleString()} {t("sar")}
+                  </span>
+                </div>
+                <div className="bg-brand-cream/35 p-3 rounded-2xl border border-brand-navy/5 space-y-1">
+                  <span className="text-[8px] font-bold text-brand-navy/40 block uppercase tracking-wide">
+                    {isRtl ? "المتبقي للسداد" : "Remaining to Pay"}
+                  </span>
+                  <span className={`font-extrabold ${selectedCommitmentDetails.status === "Completed" ? "text-brand-success" : "text-brand-orange"}`}>
+                    {selectedCommitmentDetails.remainingAmount.toLocaleString()} {t("sar")} ({selectedCommitmentDetails.remainingPercentage}%)
+                  </span>
+                </div>
+                <div className="bg-brand-cream/35 p-3 rounded-2xl border border-brand-navy/5 space-y-1">
+                  <span className="text-[8px] font-bold text-brand-navy/40 block uppercase tracking-wide">
+                    {isRtl ? "حالة الالتزام" : "Commitment Status"}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black inline-block ${
+                    selectedCommitmentDetails.status === "Completed" ? "bg-brand-success/15 text-brand-success" : "bg-brand-orange/15 text-brand-orange"
+                  }`}>
+                    {selectedCommitmentDetails.status === "Completed" ? (isRtl ? "مكتمل ✓" : "Completed ✓") : (isRtl ? "قيد التنفيذ" : "In Progress")}
+                  </span>
+                </div>
+              </div>
+
+              {/* Commitment Duration Rules */}
+              <div className="bg-brand-cream/20 p-4 rounded-2xl border border-brand-navy/5 space-y-1 text-xs">
+                <span className="text-[8px] font-bold text-brand-navy/40 block uppercase tracking-wide">
+                  {isRtl ? "تفاصيل مدة الالتزام" : "Commitment Duration Details"}
+                </span>
+                <div className="font-extrabold text-brand-navy flex justify-between items-center">
+                  <span className="text-[10px] text-brand-navy/60">
+                    {selectedCommitmentDetails.startMonth ? (isRtl ? `تاريخ البدء: ${selectedCommitmentDetails.startMonth}` : `Started: ${selectedCommitmentDetails.startMonth}`) : ""}
+                  </span>
+                  <span>
+                    {(() => {
+                      const dur = selectedCommitmentDetails.duration;
+                      if (!dur || dur === "ongoing") return isRtl ? "التزام مستمر شهرياً" : "Ongoing commitment";
+                      if (dur === 1) return isRtl ? "شهر واحد فقط" : "1 Month only";
+                      return isRtl ? `صالح لمدة ${dur} أشهر` : `Valid for ${dur} months`;
+                    })()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Matched Transactions Breakdown */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-black text-brand-navy">
+                  {isRtl ? "المعاملات المرتبطة هذا الشهر" : "Associated Payments This Month"}
+                </h4>
+                {(() => {
+                  const currentMonth = deriveToday(transactions).slice(0, 7);
+                  const matched = transactions.filter(t => 
+                    t.type === "debit" && 
+                    t.transaction_date.startsWith(currentMonth) && 
+                    t.merchant.toLowerCase().includes(selectedCommitmentDetails.merchant.toLowerCase())
+                  );
+
+                  if (matched.length === 0) {
+                    return (
+                      <p className="text-[10px] font-bold text-brand-navy/40 text-center py-4 bg-brand-cream/15 rounded-2xl border border-dashed border-brand-navy/10">
+                        {isRtl ? "لا توجد أي معاملات سداد مسجلة هذا الشهر حتى الآن." : "No payments logged this month yet."}
+                      </p>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-1.5 max-h-[150px] overflow-y-auto pr-1">
+                      {matched.map(t => (
+                        <div key={t.id} className="flex justify-between items-center p-2.5 bg-brand-success/5 border border-brand-success/10 rounded-xl text-[10px] font-bold">
+                          <span className="text-brand-success font-black">-{t.amount.toLocaleString()} {isRtl ? "ريال" : "SAR"}</span>
+                          <div className="text-right">
+                            <span className="text-brand-navy block leading-none">{t.merchant}</span>
+                            <span className="text-[8px] text-brand-navy/40 mt-0.5 block">{t.transaction_date}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3.5 pt-2">
+                <button
+                  onClick={() => {
+                    const c = selectedCommitmentDetails;
+                    setSelectedCommitmentDetails(null);
+                    handleStartEditCommitment(c);
+                  }}
+                  className="flex-1 py-3 rounded-2xl border border-brand-navy/10 text-brand-navy text-xs font-black hover:bg-brand-cream/40 transition-all flex items-center justify-center gap-1.5"
+                >
+                  {isRtl ? "تعديل الالتزام" : "Edit Commitment"}
+                </button>
+                {selectedCommitmentDetails.status !== "Completed" && (
+                  <button
+                    onClick={() => {
+                      const c = selectedCommitmentDetails;
+                      setSelectedCommitmentDetails(null);
+                      setPaymentConfirmation({ merchant: c.merchant, amount: c.expectedAmount });
+                    }}
+                    className="flex-1 py-3 rounded-2xl bg-brand-navy text-white text-xs font-black shadow-md hover:bg-brand-navy/90 transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Coins className="w-4 h-4" />
+                    <span>{isRtl ? "سداد الآن" : "Pay Now"}</span>
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* PAYMENT CONFIRMATION MODAL */}
+      <AnimatePresence>
+        {paymentConfirmation && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-brand-navy/60 backdrop-blur-md flex items-end md:items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl w-full max-w-xs p-6 border border-brand-navy/5 shadow-2xl space-y-4 text-center"
+            >
+              <div className="w-12 h-12 bg-brand-purple/10 flex items-center justify-center rounded-2xl text-brand-purple mx-auto animate-bounce-slow">
+                <Coins className="w-6 h-6 text-brand-purple" />
+              </div>
+
+              <div className="space-y-1">
+                <h3 className="text-sm font-black text-brand-navy">
+                  {isRtl ? "تأكيد عملية السداد" : "Confirm Payment"}
+                </h3>
+                <p className="text-[10px] font-bold text-brand-navy/50 leading-relaxed">
+                  {isRtl 
+                    ? `هل أنت متأكد من رغبتك في سداد هذا الالتزام المالي؟` 
+                    : `Are you sure you want to pay this commitment?`}
+                </p>
+              </div>
+
+              {/* Payment Details Card */}
+              <div className="bg-brand-cream/35 border border-brand-navy/5 p-3.5 rounded-2xl space-y-1">
+                <span className="text-[9px] font-black text-brand-navy/60 block">{paymentConfirmation.merchant}</span>
+                <span className="text-base font-black text-brand-success">{paymentConfirmation.amount.toLocaleString()} {t("sar")}</span>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPaymentConfirmation(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-brand-navy/10 text-brand-navy text-[10px] font-black hover:bg-brand-cream/40 transition-all"
+                >
+                  {isRtl ? "إلغاء" : "Cancel"}
+                </button>
+                <button
+                  onClick={async () => {
+                    const merchant = paymentConfirmation.merchant;
+                    const amount = paymentConfirmation.amount;
+                    setPaymentConfirmation(null);
+                    await handlePayCommitment(merchant, amount);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-brand-navy text-white text-[10px] font-black shadow-md hover:bg-brand-navy/90 transition-all"
+                >
+                  {isRtl ? "تأكيد السداد" : "Confirm Pay"}
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}
