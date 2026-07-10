@@ -1027,75 +1027,75 @@ export default function ChatPage() {
                               3. DYNAMIC COMMITMENTS CARD
                               ========================================================= */}
                           {msg.metadata.type === "commitments" && msg.metadata.commitmentsData && (
-                            <div className="space-y-4 w-full max-w-md mx-auto">
+                            <motion.div 
+                              initial={{ scale: 0.98, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              className="bg-white rounded-[32px] p-5 border border-brand-navy/5 shadow-md space-y-4 w-full max-w-md mx-auto"
+                            >
                               {/* Header & Global Progress Summary */}
-                              <div className="bg-white rounded-[32px] p-5 border border-brand-navy/5 shadow-md space-y-4">
-                                <div className="flex items-center justify-between gap-3 text-brand-purple">
-                                  <button
-                                    onClick={() => setShowAddCommitment(true)}
-                                    className="px-3 py-1 bg-brand-purple/10 text-brand-purple rounded-full text-[10px] font-black hover:bg-brand-purple/20 transition-all focus:outline-none"
-                                  >
-                                    {isRtl ? "+ إضافة التزام مالي" : "+ Add Commitment"}
-                                  </button>
-                                  <div className="flex items-center gap-2">
-                                    <h4 className="text-sm font-black text-brand-navy">
-                                      {isRtl ? "التزاماتي هذا الشهر" : "My Commitments"}
-                                    </h4>
-                                    <Receipt className="w-5 h-5 text-brand-purple" />
-                                  </div>
+                              <div className="flex items-center justify-between gap-3 text-brand-purple pb-1">
+                                <button
+                                  onClick={() => setShowAddCommitment(true)}
+                                  className="px-3 py-1.5 bg-brand-purple/10 text-brand-purple rounded-xl text-[10px] font-black hover:bg-brand-purple/20 transition-all focus:outline-none"
+                                >
+                                  {isRtl ? "+ إضافة التزام مالي" : "+ Add Commitment"}
+                                </button>
+                                <div className="flex items-center gap-2">
+                                  <h4 className="text-sm font-black text-brand-navy">
+                                    {isRtl ? "التزاماتي هذا الشهر" : "My Commitments"}
+                                  </h4>
+                                  <Receipt className="w-5 h-5 text-brand-purple" />
                                 </div>
-
-                                {(() => {
-                                  const data = msg.metadata.commitmentsData;
-                                  const total = data.total_commitments || 0;
-                                  const paid = data.total_paid || 0;
-                                  const percentage = data.paid_percentage || 0;
-                                  
-                                  return (
-                                    <div className="bg-brand-cream/35 border border-brand-navy/5 p-4 rounded-2xl space-y-2.5">
-                                      <div className="flex justify-between items-center text-[10px] font-black text-brand-navy">
-                                        <span>{isRtl ? `إجمالي المدفوع: ${paid.toLocaleString()} ريال` : `Total Paid: ${paid.toLocaleString()} SAR`}</span>
-                                        <span>{isRtl ? `من أصل: ${total.toLocaleString()} ريال` : `of ${total.toLocaleString()} SAR`}</span>
-                                      </div>
-                                      <div className="w-full h-2.5 bg-brand-cream rounded-full overflow-hidden p-0.5 border border-brand-navy/5">
-                                        <div 
-                                          className="h-full bg-gradient-to-r from-brand-purple to-brand-navy rounded-full transition-all duration-700 ease-out"
-                                          style={{ width: `${percentage}%` }}
-                                        ></div>
-                                      </div>
-                                      <div className="text-center text-[9px] font-black text-brand-navy/45 uppercase tracking-wide">
-                                        {isRtl 
-                                          ? `سداد ${data.commitments_list.filter((x: any) => x.status === "Completed").length} من أصل ${data.commitments_list.length} التزامات`
-                                          : `Paid ${data.commitments_list.filter((x: any) => x.status === "Completed").length} of ${data.commitments_list.length} commitments`}
-                                      </div>
-                                    </div>
-                                  );
-                                })()}
                               </div>
 
-                              {/* Grid/List of Individual Commitment Cards */}
-                              <div className="grid grid-cols-1 gap-3.5">
+                              {(() => {
+                                const data = msg.metadata.commitmentsData;
+                                const total = data.total_commitments || 0;
+                                const paid = data.total_paid || 0;
+                                const percentage = data.paid_percentage || 0;
+                                
+                                return (
+                                  <div className="bg-brand-cream/35 border border-brand-navy/5 p-4 rounded-2xl space-y-2.5">
+                                    <div className="flex justify-between items-center text-[10px] font-black text-brand-navy">
+                                      <span>{isRtl ? `إجمالي المدفوع: ${paid.toLocaleString()} ريال` : `Total Paid: ${paid.toLocaleString()} SAR`}</span>
+                                      <span>{isRtl ? `من أصل: ${total.toLocaleString()} ريال` : `of ${total.toLocaleString()} SAR`}</span>
+                                    </div>
+                                    <div className="w-full h-2.5 bg-brand-cream rounded-full overflow-hidden p-0.5 border border-brand-navy/5">
+                                      <div 
+                                        className="h-full bg-gradient-to-r from-brand-purple to-brand-navy rounded-full transition-all duration-700 ease-out"
+                                        style={{ width: `${percentage}%` }}
+                                      ></div>
+                                    </div>
+                                    <div className="text-center text-[9px] font-black text-brand-navy/45 uppercase tracking-wide">
+                                      {isRtl 
+                                        ? `سداد ${data.commitments_list.filter((x: any) => x.status === "Completed").length} من أصل ${data.commitments_list.length} التزامات`
+                                        : `Paid ${data.commitments_list.filter((x: any) => x.status === "Completed").length} of ${data.commitments_list.length} commitments`}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* List of Individual Commitment Rows */}
+                              <div className="space-y-3.5">
                                 {msg.metadata.commitmentsData.commitments_list.map((c: any) => {
                                   const isCompleted = c.status === "Completed";
                                   
                                   return (
-                                    <motion.div 
+                                    <div 
                                       key={c.id} 
-                                      initial={{ scale: 0.98, opacity: 0 }}
-                                      animate={{ scale: 1, opacity: 1 }}
-                                      className={`rounded-3xl p-5 border transition-all duration-300 relative overflow-hidden bg-white shadow-sm hover:shadow-md ${
+                                      className={`p-4 rounded-2xl border transition-all duration-300 relative ${
                                         isCompleted 
-                                          ? "border-brand-success/15 bg-gradient-to-br from-white to-brand-success/5" 
-                                          : "border-brand-navy/5"
+                                          ? "bg-brand-success/5 border-brand-success/15" 
+                                          : "bg-brand-cream/20 border-brand-navy/5"
                                       }`}
                                     >
-                                      {/* Top Row: Emoji, Category, Merchant & Actions */}
-                                      <div className="flex justify-between items-start mb-4">
+                                      {/* Top Row: Emoji, Title, Actions */}
+                                      <div className="flex justify-between items-center mb-2.5">
                                         {/* Actions: Edit, Delete */}
-                                        <div className="flex items-center gap-1.5">
+                                        <div className="flex items-center gap-1">
                                           <button
                                             onClick={() => handleStartEditCommitment(c)}
-                                            className="p-1.5 rounded-lg text-brand-navy/40 hover:text-brand-purple hover:bg-brand-purple/5 transition-all focus:outline-none"
+                                            className="p-1 rounded-lg text-brand-navy/35 hover:text-brand-purple hover:bg-brand-purple/5 transition-all focus:outline-none"
                                             title={isRtl ? "تعديل" : "Edit"}
                                           >
                                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -1104,87 +1104,71 @@ export default function ChatPage() {
                                           </button>
                                           <button
                                             onClick={() => handleDeleteCommitment(c.merchant)}
-                                            className="p-1.5 rounded-lg text-brand-navy/40 hover:text-brand-danger hover:bg-brand-danger/5 transition-all focus:outline-none"
+                                            className="p-1 rounded-lg text-brand-navy/35 hover:text-brand-danger hover:bg-brand-danger/5 transition-all focus:outline-none"
                                             title={isRtl ? "حذف" : "Delete"}
                                           >
                                             <X className="w-3.5 h-3.5" />
                                           </button>
                                         </div>
 
-                                        {/* Emoji, Category & Merchant Title */}
-                                        <div className="flex items-center gap-3 text-right">
+                                        {/* Emoji & Title */}
+                                        <div className="flex items-center gap-2 text-right">
                                           <div className="text-right">
-                                            <h5 className="text-xs font-black text-brand-navy flex items-center gap-1 justify-end">
-                                              <span>{c.merchant}</span>
-                                            </h5>
-                                            <span className="text-[9px] font-bold text-brand-navy/40 uppercase tracking-wide block mt-0.5">
+                                            <h5 className="text-xs font-black text-brand-navy">{c.merchant}</h5>
+                                            <span className="text-[8px] font-bold text-brand-navy/40 uppercase tracking-wide block">
                                               {c.category}
                                             </span>
                                           </div>
-                                          <div className="w-10 h-10 bg-brand-cream/50 rounded-2xl flex items-center justify-center text-lg border border-brand-navy/5 shadow-inner">
-                                            {c.emoji || "📋"}
-                                          </div>
+                                          <span className="text-base">{c.emoji || "📋"}</span>
                                         </div>
                                       </div>
 
-                                      {/* Details Grid */}
-                                      <div className="grid grid-cols-2 gap-3 border-t border-brand-navy/5 pt-3.5 mb-3.5">
-                                        <div className="text-left space-y-0.5">
-                                          <span className="text-[8px] font-bold text-brand-navy/35 block uppercase tracking-wide">{isRtl ? "المدفوع" : "Paid"}</span>
-                                          <span className="text-xs font-black text-brand-success">{c.paidAmount.toLocaleString()} {t("sar")}</span>
+                                      {/* Details Grid: Expected, Paid, Remaining, Due Date */}
+                                      <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 border-t border-brand-navy/5 pt-2 text-[9px] font-bold text-brand-navy/70 mb-2">
+                                        <div className="text-left">
+                                          <span className="text-brand-navy/40 block text-[7px] uppercase tracking-wide">{isRtl ? "المدفوع" : "Paid"}</span>
+                                          <span className="text-brand-success">{c.paidAmount.toLocaleString()} {t("sar")}</span>
                                         </div>
-                                        <div className="text-right space-y-0.5">
-                                          <span className="text-[8px] font-bold text-brand-navy/35 block uppercase tracking-wide">{isRtl ? "القيمة المتوقعة" : "Expected"}</span>
-                                          <span className="text-xs font-black text-brand-navy">{c.expectedAmount.toLocaleString()} {t("sar")}</span>
+                                        <div className="text-right">
+                                          <span className="text-brand-navy/40 block text-[7px] uppercase tracking-wide">{isRtl ? "المتوقع" : "Expected"}</span>
+                                          <span>{c.expectedAmount.toLocaleString()} {t("sar")}</span>
                                         </div>
-                                        <div className="text-left space-y-0.5">
-                                          <span className="text-[8px] font-bold text-brand-navy/35 block uppercase tracking-wide">{isRtl ? "المتبقي %" : "Remaining %"}</span>
-                                          <span className={`text-xs font-black ${isCompleted ? "text-brand-success" : "text-brand-orange"}`}>{c.remainingPercentage}%</span>
+                                        <div className="text-left">
+                                          <span className="text-brand-navy/40 block text-[7px] uppercase tracking-wide">{isRtl ? "المتبقي" : "Remaining"}</span>
+                                          <span className={isCompleted ? "text-brand-success" : "text-brand-orange"}>
+                                            {c.remainingAmount.toLocaleString()} {t("sar")} ({c.remainingPercentage}%)
+                                          </span>
                                         </div>
-                                        <div className="text-right space-y-0.5">
-                                          <span className="text-[8px] font-bold text-brand-navy/35 block uppercase tracking-wide">{isRtl ? "المتبقي" : "Remaining"}</span>
-                                          <span className={`text-xs font-black ${isCompleted ? "text-brand-success" : "text-brand-orange"}`}>{c.remainingAmount.toLocaleString()} {t("sar")}</span>
+                                        <div className="text-right">
+                                          <span className="text-brand-navy/40 block text-[7px] uppercase tracking-wide">{isRtl ? "الاستحقاق" : "Due Date"}</span>
+                                          <span>{isRtl ? `يوم ${c.dueDate}` : `Day ${c.dueDate}`}</span>
                                         </div>
                                       </div>
 
-                                      {/* Bottom Row: Due date & status & Quick Pay action */}
-                                      <div className="flex justify-between items-center border-t border-brand-navy/5 pt-3.5 text-[9px] font-bold">
-                                        {/* Status / Quick Pay Action */}
-                                        <div>
-                                          {isCompleted ? (
-                                            <span className="px-2.5 py-1 bg-brand-success/10 text-brand-success text-[8.5px] font-black rounded-lg flex items-center gap-1.5 border border-brand-success/15">
-                                              <span className="w-1.5 h-1.5 bg-brand-success rounded-full"></span>
-                                              {isRtl ? "مكتمل" : "Completed"}
-                                            </span>
-                                          ) : (
-                                            <div className="flex items-center gap-2">
-                                              <button
-                                                onClick={() => handlePayCommitment(c.merchant, c.expectedAmount)}
-                                                className="px-3 py-1.5 bg-brand-navy text-white text-[9px] font-black rounded-xl hover:bg-brand-navy/90 shadow-sm transition-all focus:outline-none flex items-center gap-1 hover:scale-102 active:scale-98"
-                                              >
-                                                <Coins className="w-3.5 h-3.5" />
-                                                {isRtl ? "سداد الآن" : "Pay Now"}
-                                              </button>
-                                              <span className="px-2.5 py-1 bg-brand-orange/10 text-brand-orange text-[8.5px] font-black rounded-lg flex items-center gap-1.5 border border-brand-orange/15">
-                                                <span className="w-1.5 h-1.5 bg-brand-orange rounded-full animate-pulse"></span>
-                                                {isRtl ? "قيد التنفيذ" : "In Progress"}
-                                              </span>
-                                            </div>
-                                          )}
-                                        </div>
-
-                                        {/* Due Date Info */}
-                                        <div className="text-brand-navy/55 text-right">
-                                          {isRtl 
-                                            ? `تاريخ الاستحقاق: يوم ${c.dueDate} من الشهر` 
-                                            : `Due Date: Day ${c.dueDate}`}
-                                        </div>
+                                      {/* Pay Now Button / Completed Status */}
+                                      <div className="flex justify-between items-center border-t border-brand-navy/5 pt-2">
+                                        <span className={`px-2 py-0.5 rounded-md text-[8px] font-black ${
+                                          isCompleted 
+                                            ? "bg-brand-success/10 text-brand-success" 
+                                            : "bg-brand-orange/10 text-brand-orange"
+                                        }`}>
+                                          {isCompleted ? (isRtl ? "مكتمل ✓" : "Completed ✓") : (isRtl ? "قيد التنفيذ" : "In Progress")}
+                                        </span>
+                                        {!isCompleted && (
+                                          <button
+                                            onClick={() => handlePayCommitment(c.merchant, c.expectedAmount)}
+                                            className="px-2.5 py-1 bg-brand-navy text-white text-[8px] font-black rounded-lg hover:bg-brand-navy/90 shadow-sm transition-all focus:outline-none flex items-center gap-1"
+                                          >
+                                            <Coins className="w-3 h-3" />
+                                            {isRtl ? "سداد الآن" : "Pay Now"}
+                                          </button>
+                                        )}
                                       </div>
-                                    </motion.div>
+                                    </div>
                                   );
                                 })}
                               </div>
-                            </div>
+                            </motion.div>
                           )}
 
                         </div>

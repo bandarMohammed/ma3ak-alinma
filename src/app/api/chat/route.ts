@@ -85,8 +85,10 @@ export async function POST(req: Request) {
         queryLower.includes("التزاماتي")
       );
 
+    const hasReportKeyword = queryLower.includes("report") || queryLower.includes("تقرير");
+
     const isHabitsQuery =
-      !isSimulationQuery && !isCommitmentsQuery && (
+      !isSimulationQuery && !isCommitmentsQuery && !hasReportKeyword && (
         queryLower.includes("habits") ||
         queryLower.includes("عادات") ||
         queryLower.includes("أحوالي") ||
@@ -100,8 +102,7 @@ export async function POST(req: Request) {
 
     const isReportQuery =
       !isSimulationQuery && !isCommitmentsQuery && !isHabitsQuery && (
-        queryLower.includes("report") ||
-        queryLower.includes("تقرير") ||
+        hasReportKeyword ||
         queryLower.includes("صرفي") ||
         queryLower.includes("history") ||
         queryLower.includes("spent") ||
