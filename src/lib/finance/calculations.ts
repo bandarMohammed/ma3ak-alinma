@@ -343,15 +343,83 @@ export function computeCommitments(
   const currentMonthPrefix = latestDateStr.substring(0, 7); // e.g. "2026-05"
   const [currentYear, currentMonthVal] = currentMonthPrefix.split("-").map(Number);
 
-  // 2. Default commitments definition
-  const defaults = [
-    { merchant: "Emaar Real Estate", category: "Bills & Utilities", emoji: "🏠", expectedAmount: 2500, dueDate: 1, duration: "ongoing", startMonth: "2025-01" },
-    { merchant: "Mobily Home Internet", category: "Bills & Utilities", emoji: "📶", expectedAmount: 299, dueDate: 5, duration: "ongoing", startMonth: "2025-01" },
-    { merchant: "Tawuniya Insurance", category: "Bills & Utilities", emoji: "🛡️", expectedAmount: 350, dueDate: 10, duration: "ongoing", startMonth: "2025-01" },
-    { merchant: "Netflix", category: "Entertainment", emoji: "🎬", expectedAmount: 56, duration: "ongoing", startMonth: "2025-01", dueDate: 15 },
-    { merchant: "Alinma Auto Finance", category: "Bills & Utilities", emoji: "🚗", expectedAmount: 1200, dueDate: 27, duration: "ongoing", startMonth: "2025-01" },
-    { merchant: "stc pay", category: "Bills & Utilities", emoji: "📱", expectedAmount: 287.5, dueDate: 28, duration: "ongoing", startMonth: "2025-01" }
-  ];
+  // 2. Dynamic commitments detection from transaction history
+  const merchantGroups: Record<string, Transaction[]> = {};
+  txs.forEach(t => {
+    if (t.type === "debit") {
+      const key = t.merchant.trim();
+      if (!merchantGroups[key]) merchantGroups[key] = [];
+      merchantGroups[key].push(t);
+    }
+  });
+
+  const detectedDefaults: { merchant: string; category: string; emoji: string; expectedAmount: number; dueDate: number; duration: string; startMonth: string }[] = [];
+  const ONE_OFF_MERCHANTS = new Set([
+    "Jarir Bookstore", "Hungerstation", "Jahez", "Uber", "Careem", "Amazon", "Apple", "Google", 
+    "Panda", "Othaim", "Lulu", "Subway", "Starbucks", "McDonalds", "KFC", "AlBaik", "Hyper Panda",
+    "Carrefour", "Noon", "Shein", "Talabat", "Mrsool", "Sary", "Nana"
+  ]);
+
+  Object.entries(merchantGroups).forEach(([merchantName, group]) => {
+    // Unique months this merchant was active
+    const monthsActive = new Set(group.map(t => t.transaction_date.slice(0, 7)));
+    const avgCountPerMonth = group.length / monthsActive.size;
+    
+    // We consider it a recurring commitment if:
+    // - Active in 3+ months
+    // - Paid roughly once/twice a month (avg frequency <= 1.8)
+    // - Not a retail shop or food delivery
+    if (monthsActive.size >= 3 && avgCountPerMonth <= 1.8 && !ONE_OFF_MERCHANTS.has(merchantName)) {
+      // Calculate average amount
+      const sum = group.reduce((acc, t) => acc + t.amount, 0);
+      const avgAmount = Math.round(sum / group.length);
+      
+      // Calculate typical due date day
+      const days = group.map(t => parseInt(t.transaction_date.slice(8, 10)));
+      const avgDay = Math.round(days.reduce((acc, d) => acc + d, 0) / days.length);
+      
+      // Category from the latest transaction
+      const sortedGroup = [...group].sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
+      const latestTx = sortedGroup[0];
+      const category = latestTx.category;
+      
+      // Select Emoji based on merchant name or category
+      let emoji = "📋";
+      const mLower = merchantName.toLowerCase();
+      if (mLower.includes("emaar") || mLower.includes("real estate") || mLower.includes("rent") || mLower.includes("عقار")) emoji = "🏠";
+      else if (mLower.includes("mobily") || mLower.includes("stc") || mLower.includes("internet") || mLower.includes("زين") || mLower.includes("موبايلي")) emoji = "📶";
+      else if (mLower.includes("tawuniya") || mLower.includes("insurance") || mLower.includes("تأمين")) emoji = "🛡️";
+      else if (mLower.includes("netflix") || mLower.includes("popcorn") || mLower.includes("cinema") || mLower.includes("نتفلكس")) emoji = "🍿";
+      else if (mLower.includes("auto") || mLower.includes("car") || mLower.includes("سيارة") || mLower.includes("installment")) emoji = "🚗";
+      else if (mLower.includes("electricity") || mLower.includes("water") || mLower.includes("كهرباء") || mLower.includes("فاتورة")) emoji = "⚡";
+      else if (category === "Entertainment") emoji = "🎬";
+      else if (category === "Financing") emoji = "🏦";
+      else if (category === "Bills & Utilities") emoji = "🔌";
+      
+      detectedDefaults.push({
+        merchant: merchantName,
+        category,
+        emoji,
+        expectedAmount: avgAmount,
+        dueDate: avgDay,
+        duration: "ongoing",
+        startMonth: sortedGroup[sortedGroup.length - 1].transaction_date.slice(0, 7) // earliest month
+      });
+    }
+  });
+
+  // Fallback if no recurring transactions detected
+  let defaults = detectedDefaults;
+  if (defaults.length === 0) {
+    defaults = [
+      { merchant: "Emaar Real Estate", category: "Bills & Utilities", emoji: "🏠", expectedAmount: 2500, dueDate: 1, duration: "ongoing", startMonth: "2025-01" },
+      { merchant: "Mobily Home Internet", category: "Bills & Utilities", emoji: "📶", expectedAmount: 299, dueDate: 5, duration: "ongoing", startMonth: "2025-01" },
+      { merchant: "Tawuniya Insurance", category: "Bills & Utilities", emoji: "🛡️", expectedAmount: 350, dueDate: 10, duration: "ongoing", startMonth: "2025-01" },
+      { merchant: "Netflix", category: "Entertainment", emoji: "🎬", expectedAmount: 56, duration: "ongoing", startMonth: "2025-01", dueDate: 15 },
+      { merchant: "Alinma Auto Finance", category: "Bills & Utilities", emoji: "🚗", expectedAmount: 1200, dueDate: 27, duration: "ongoing", startMonth: "2025-01" },
+      { merchant: "stc pay", category: "Bills & Utilities", emoji: "📱", expectedAmount: 287.5, dueDate: 28, duration: "ongoing", startMonth: "2025-01" }
+    ];
+  }
 
   // Filter out any default commitments that are deleted
   const activeDefaults = defaults.filter(d => 

@@ -638,32 +638,37 @@ export default function ChatPage() {
                             <motion.div 
                               initial={{ scale: 0.98, opacity: 0 }}
                               animate={{ scale: 1, opacity: 1 }}
-                              className="bg-white rounded-3xl p-5 border border-brand-navy/5 shadow-md space-y-4"
+                              className="bg-gradient-to-br from-white to-[#FDFDFD] rounded-[32px] p-6 border border-brand-navy/10 shadow-[0_20px_40px_rgba(27,42,74,0.04)] space-y-5 w-full max-w-md mx-auto"
                             >
                               {/* Card Banner */}
-                              <div className="flex items-center gap-2 text-brand-purple">
-                                <FileText className="w-5 h-5" />
-                                <h4 className="text-xs font-black uppercase tracking-wider">
-                                  {t("reportCardTitle")} ({msg.metadata.reportData.period})
-                                </h4>
+                              <div className="flex items-center justify-between bg-brand-purple/5 px-3.5 py-2 rounded-2xl border border-brand-purple/10 text-brand-purple">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="w-4 h-4 text-brand-purple" />
+                                  <h4 className="text-[10px] font-black uppercase tracking-wider text-brand-navy">
+                                    {t("reportCardTitle")}
+                                  </h4>
+                                </div>
+                                <span className="text-[9px] font-extrabold bg-brand-purple/10 px-2 py-0.5 rounded-lg text-brand-purple">
+                                  {msg.metadata.reportData.period}
+                                </span>
                               </div>
 
                               {/* Income / Spent Grid */}
-                              <div className="grid grid-cols-2 gap-3">
-                                <div className="bg-brand-cream/30 p-3 rounded-2xl border border-brand-navy/5">
-                                  <span className="text-[9px] font-bold text-brand-navy/40 block">
+                              <div className="grid grid-cols-2 gap-3.5">
+                                <div className="bg-gradient-to-br from-[#EBF7EE]/60 to-[#EBF7EE]/15 p-3.5 rounded-2xl border border-brand-success/15 shadow-[0_2px_8px_rgba(46,125,79,0.01)] text-right">
+                                  <span className="text-[8px] font-bold text-brand-navy/40 block uppercase tracking-wide">
                                     {t("totalIncome")}
                                   </span>
-                                  <span className="text-xs font-extrabold text-brand-success">
+                                  <span className="text-xs font-black text-brand-success block mt-0.5">
                                     +{msg.metadata.reportData.totalIncome.toLocaleString()} {t("sar")}
                                   </span>
                                 </div>
 
-                                <div className="bg-brand-cream/30 p-3 rounded-2xl border border-brand-navy/5">
-                                  <span className="text-[9px] font-bold text-brand-navy/40 block">
+                                <div className="bg-gradient-to-br from-[#FCECEB]/60 to-[#FCECEB]/15 p-3.5 rounded-2xl border border-brand-danger/15 shadow-[0_2px_8px_rgba(192,57,43,0.01)] text-right">
+                                  <span className="text-[8px] font-bold text-brand-navy/40 block uppercase tracking-wide">
                                     {t("totalSpent")}
                                   </span>
-                                  <span className="text-xs font-extrabold text-brand-danger">
+                                  <span className="text-xs font-black text-brand-danger block mt-0.5">
                                     -{msg.metadata.reportData.totalSpent.toLocaleString()} {t("sar")}
                                   </span>
                                 </div>
@@ -689,48 +694,59 @@ export default function ChatPage() {
                                         ))}
                                       </Pie>
                                       <Tooltip contentStyle={{ fontSize: "9px", borderRadius: "10px", padding: "5px" }} />
-                                      <Legend formatter={(value) => <span className="text-[12px] font-black text-brand-navy/80">{value}</span>} layout="vertical" align="right" verticalAlign="middle" iconSize={10} iconType="circle" />
+                                      <Legend formatter={(value) => <span className="text-[11px] font-black text-brand-navy/80">{value}</span>} layout="vertical" align="right" verticalAlign="middle" iconSize={8} iconType="circle" />
                                     </PieChart>
                                   </ResponsiveContainer>
                                 </div>
                               )}
 
-                              {/* Category Percent List */}
-                              <div className="space-y-1.5 pt-1">
-                                <span className="text-[9px] font-bold text-brand-navy/45 uppercase tracking-wider block">
+                              {/* Category Percent List with premium progress bars */}
+                              <div className="space-y-3 pt-1">
+                                <span className="text-[9px] font-black text-brand-navy/45 uppercase tracking-wider block">
                                   {t("topCategories")}
                                 </span>
                                 {msg.metadata.reportData.topCategories.slice(0, 3).map((cat, idx) => (
-                                  <div key={cat.category} className="flex justify-between items-center text-[10px] font-bold text-brand-navy/80">
-                                    <span className="flex items-center gap-1.5">
-                                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }}></span>
-                                      {cat.category}
-                                    </span>
-                                    <span>
-                                      {cat.amount.toLocaleString()} {t("sar")} ({cat.percentage}%)
-                                    </span>
+                                  <div key={cat.category} className="space-y-1">
+                                    <div className="flex justify-between items-center text-[10px] font-bold text-brand-navy/80">
+                                      <span className="flex items-center gap-1.5">
+                                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }}></span>
+                                        {cat.category}
+                                      </span>
+                                      <span>
+                                        {cat.amount.toLocaleString()} {t("sar")} ({cat.percentage}%)
+                                      </span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-brand-cream/40 rounded-full overflow-hidden border border-brand-navy/5 p-0.5">
+                                      <div 
+                                        className="h-full rounded-full transition-all duration-500 ease-out"
+                                        style={{ width: `${cat.percentage}%`, backgroundColor: COLORS[idx % COLORS.length] }}
+                                      ></div>
+                                    </div>
                                   </div>
                                 ))}
                               </div>
 
                               {/* Smart AI Insights */}
-                              <div className="bg-brand-orange/5 border border-brand-orange/20 rounded-2xl p-4 space-y-2">
-                                <div className="flex items-center gap-1.5 text-brand-orange font-bold text-[10px]">
+                              <div className="bg-gradient-to-br from-brand-orange/10 to-brand-orange/5 border border-brand-orange/20 rounded-2xl p-4.5 space-y-2.5 shadow-[0_2px_12px_rgba(212,117,75,0.02)]">
+                                <div className="flex items-center gap-1.5 text-brand-orange font-black text-[10px]">
                                   <Sparkles className="w-4 h-4 animate-pulse" />
                                   <span>{t("insightsTitle")}</span>
                                 </div>
-                                <ul className="list-disc list-inside text-[9px] font-bold text-brand-navy/70 space-y-1">
+                                <ul className="list-inside text-[9.5px] font-bold text-brand-navy/70 space-y-1.5 leading-relaxed text-right">
                                   {msg.metadata.reportData.insights.map((insight, idx) => (
-                                    <li key={idx}>{insight}</li>
+                                    <li key={idx} className="relative pr-3">
+                                      <span className="absolute right-0 text-brand-orange">•</span>
+                                      {insight}
+                                    </li>
                                   ))}
                                 </ul>
                               </div>
 
                               {/* Actions bar */}
-                              <div className="flex gap-2 pt-1 border-t border-brand-navy/5">
+                              <div className="flex gap-2.5 pt-1.5 border-t border-brand-navy/5">
                                 <button 
                                   onClick={() => handleSaveReportToHistory(msg.metadata?.reportData)}
-                                  className="flex-1 py-2 rounded-xl border border-brand-navy/10 text-brand-navy text-[10px] font-extrabold flex items-center justify-center gap-1.5 hover:bg-brand-cream/20 transition-all"
+                                  className="flex-1 py-2.5 rounded-xl border border-brand-navy/10 text-brand-navy text-[10px] font-black flex items-center justify-center gap-1.5 hover:bg-brand-cream/30 transition-all focus:outline-none"
                                 >
                                   <Save className="w-3.5 h-3.5" />
                                   {isRtl ? "حفظ التقرير" : "Save Report"}
@@ -1051,7 +1067,7 @@ export default function ChatPage() {
                             <motion.div 
                               initial={{ scale: 0.98, opacity: 0 }}
                               animate={{ scale: 1, opacity: 1 }}
-                              className="bg-white rounded-[32px] p-5 border border-brand-navy/5 shadow-md space-y-4 w-full max-w-md mx-auto"
+                              className="bg-gradient-to-br from-white to-[#FDFDFD] rounded-[32px] p-5 border border-brand-navy/10 shadow-[0_20px_40px_rgba(27,42,74,0.04)] space-y-4 w-full max-w-md mx-auto"
                             >
                               {/* Header & Global Progress Summary */}
                               <div className="flex items-center justify-between gap-3 text-brand-purple pb-1">
@@ -1076,9 +1092,14 @@ export default function ChatPage() {
                                 const percentage = data.paid_percentage || 0;
                                 
                                 return (
-                                  <div className="bg-brand-cream/35 border border-brand-navy/5 p-4 rounded-2xl space-y-2.5">
+                                  <div className="bg-gradient-to-r from-brand-cream/30 to-brand-cream/10 border border-brand-navy/5 p-4 rounded-2xl space-y-2.5">
                                     <div className="flex justify-between items-center text-[10px] font-black text-brand-navy">
-                                      <span>{isRtl ? `إجمالي المدفوع: ${paid.toLocaleString()} ريال` : `Total Paid: ${paid.toLocaleString()} SAR`}</span>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="px-2 py-0.5 rounded-full bg-brand-orange/10 text-brand-orange text-[8px] font-black">
+                                          {percentage}%
+                                        </span>
+                                        <span>{isRtl ? `إجمالي المدفوع: ${paid.toLocaleString()} ريال` : `Total Paid: ${paid.toLocaleString()} SAR`}</span>
+                                      </div>
                                       <span>{isRtl ? `من أصل: ${total.toLocaleString()} ريال` : `of ${total.toLocaleString()} SAR`}</span>
                                     </div>
                                     <div className="w-full h-2.5 bg-brand-cream rounded-full overflow-hidden p-0.5 border border-brand-navy/5">
@@ -1105,12 +1126,16 @@ export default function ChatPage() {
                                     <div 
                                       key={c.id} 
                                       onClick={() => setSelectedCommitmentDetails(c)}
-                                      className={`p-4 rounded-2xl border transition-all duration-300 relative cursor-pointer hover:border-brand-purple/30 ${
+                                      className={`p-4 rounded-2xl border transition-all duration-300 relative cursor-pointer overflow-hidden ${
                                         isCompleted 
-                                          ? "bg-brand-success/5 border-brand-success/15" 
-                                          : "bg-brand-cream/20 border-brand-navy/5"
-                                      }`}
+                                          ? "bg-brand-success/5 border-brand-success/15 hover:border-brand-success/30 shadow-[0_2px_8px_rgba(46,125,79,0.02)]" 
+                                          : "bg-brand-cream/15 border-brand-navy/5 hover:border-brand-purple/20 hover:shadow-[0_4px_12px_rgba(124,111,212,0.04)]"
+                                      } ${isRtl ? "pl-4 pr-6" : "pr-4 pl-6"}`}
                                     >
+                                      {/* Vertical Status Ribbon indicator on the side */}
+                                      <div className={`absolute top-0 bottom-0 ${isRtl ? "right-0 rounded-r-2xl" : "left-0 rounded-l-2xl"} w-1.5 ${
+                                        isCompleted ? "bg-brand-success" : "bg-brand-orange"
+                                      }`} />
                                       {/* Top Row: Emoji, Title, Actions */}
                                       <div className="flex justify-between items-center mb-2.5">
                                         {/* Actions: Edit, Delete */}

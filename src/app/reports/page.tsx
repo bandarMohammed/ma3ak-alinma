@@ -259,45 +259,45 @@ export default function ReportsPage() {
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 220 }}
-              className="bg-white rounded-t-[32px] md:rounded-3xl w-full max-w-md max-h-[85vh] md:max-h-[90vh] overflow-y-auto p-6 relative border border-brand-navy/5 shadow-2xl space-y-4"
+              className="bg-white rounded-t-[32px] md:rounded-3xl w-full max-w-md max-h-[85vh] md:max-h-[90vh] overflow-y-auto p-6 relative border border-brand-navy/5 shadow-2xl space-y-5 text-right"
             >
               {/* Modal Header */}
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2 text-brand-purple">
-                  <Award className="w-5 h-5 text-brand-orange animate-bounce-slow" />
-                  <h3 className="text-base font-black text-brand-navy">
-                    {selectedReport.title}
-                  </h3>
-                </div>
+              <div className="flex justify-between items-center pb-1 border-b border-brand-navy/5">
                 <button
                   onClick={() => setSelectedReport(null)}
                   className="p-1.5 rounded-full bg-brand-cream/50 text-brand-navy/60 hover:bg-brand-cream hover:text-brand-navy transition-colors focus:outline-none"
                 >
                   <X className="w-5 h-5" />
                 </button>
+                <div className="flex items-center gap-2 text-brand-purple">
+                  <Award className="w-5 h-5 text-brand-orange animate-bounce-slow" />
+                  <h3 className="text-base font-black text-brand-navy">
+                    {selectedReport.title}
+                  </h3>
+                </div>
               </div>
 
               {/* Saved Date */}
-              <span className="text-[9px] font-bold text-brand-navy/40 block bg-brand-cream/20 px-3 py-1.5 rounded-xl border border-brand-navy/5">
+              <span className="text-[9px] font-bold text-brand-navy/40 block bg-brand-cream/15 px-3.5 py-2 rounded-xl border border-brand-navy/5">
                 {t("savedOn")}: {new Date(selectedReport.saved_at).toLocaleString()}
               </span>
 
               {/* Total Grid */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-brand-cream/35 p-3.5 rounded-2xl border border-brand-navy/5">
-                  <span className="text-[9px] font-bold text-brand-navy/40 block">
+              <div className="grid grid-cols-2 gap-3.5">
+                <div className="bg-gradient-to-br from-[#EBF7EE]/60 to-[#EBF7EE]/15 p-3.5 rounded-2xl border border-brand-success/15 shadow-[0_2px_8px_rgba(46,125,79,0.01)] text-right">
+                  <span className="text-[8px] font-bold text-brand-navy/40 block uppercase tracking-wide">
                     {t("totalIncome")}
                   </span>
-                  <span className="text-xs font-extrabold text-brand-success">
+                  <span className="text-xs font-black text-brand-success block mt-0.5">
                     +{selectedReport.total_income.toLocaleString()} {t("sar")}
                   </span>
                 </div>
 
-                <div className="bg-brand-cream/35 p-3.5 rounded-2xl border border-brand-navy/5">
-                  <span className="text-[9px] font-bold text-brand-navy/40 block">
+                <div className="bg-gradient-to-br from-[#FCECEB]/60 to-[#FCECEB]/15 p-3.5 rounded-2xl border border-brand-danger/15 shadow-[0_2px_8px_rgba(192,57,43,0.01)] text-right">
+                  <span className="text-[8px] font-bold text-brand-navy/40 block uppercase tracking-wide">
                     {t("totalSpent")}
                   </span>
-                  <span className="text-xs font-extrabold text-brand-danger">
+                  <span className="text-xs font-black text-brand-danger block mt-0.5">
                     -{selectedReport.total_spent.toLocaleString()} {t("sar")}
                   </span>
                 </div>
@@ -323,39 +323,50 @@ export default function ReportsPage() {
                         ))}
                       </Pie>
                       <Tooltip contentStyle={{ fontSize: "9px", borderRadius: "10px", padding: "5px" }} />
-                      <Legend formatter={(value) => <span className="text-[12px] font-black text-brand-navy/80">{value}</span>} layout="vertical" align="right" verticalAlign="middle" iconSize={10} iconType="circle" />
+                      <Legend formatter={(value) => <span className="text-[11px] font-black text-brand-navy/80">{value}</span>} layout="vertical" align="right" verticalAlign="middle" iconSize={8} iconType="circle" />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
               )}
 
-              {/* Category Breakdown list */}
-              <div className="space-y-1.5 pt-1">
-                <span className="text-[9px] font-bold text-brand-navy/45 uppercase tracking-wider block">
+              {/* Category Breakdown list with progress bars */}
+              <div className="space-y-3 pt-1">
+                <span className="text-[9px] font-black text-brand-navy/45 uppercase tracking-wider block">
                   {t("topCategories")}
                 </span>
                 {selectedReport.top_categories.map((cat, idx) => (
-                  <div key={cat.category} className="flex justify-between items-center text-[10px] font-bold text-brand-navy/80">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }}></span>
-                      {cat.category}
-                    </span>
-                    <span>
-                      {cat.amount.toLocaleString()} {t("sar")} ({cat.percentage}%)
-                    </span>
+                  <div key={cat.category} className="space-y-1">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-brand-navy/80">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }}></span>
+                        {cat.category}
+                      </span>
+                      <span>
+                        {cat.amount.toLocaleString()} {t("sar")} ({cat.percentage}%)
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-brand-cream/40 rounded-full overflow-hidden border border-brand-navy/5 p-0.5">
+                      <div 
+                        className="h-full rounded-full transition-all duration-500 ease-out"
+                        style={{ width: `${cat.percentage}%`, backgroundColor: COLORS[idx % COLORS.length] }}
+                      ></div>
+                    </div>
                   </div>
                 ))}
               </div>
 
               {/* Dynamic Saved Insights */}
-              <div className="bg-brand-orange/5 border border-brand-orange/20 rounded-2xl p-4 space-y-2">
-                <div className="flex items-center gap-1.5 text-brand-orange font-bold text-[10px]">
+              <div className="bg-gradient-to-br from-brand-orange/10 to-brand-orange/5 border border-brand-orange/20 rounded-2xl p-4.5 space-y-2.5 shadow-[0_2px_12px_rgba(212,117,75,0.02)]">
+                <div className="flex items-center gap-1.5 text-brand-orange font-black text-[10px]">
                   <Sparkles className="w-4 h-4 animate-pulse" />
                   <span>{t("insightsTitle")}</span>
                 </div>
-                <ul className="list-disc list-inside text-[9px] font-bold text-brand-navy/70 space-y-1">
+                <ul className="list-inside text-[9.5px] font-bold text-brand-navy/70 space-y-1.5 leading-relaxed text-right">
                   {selectedReport.insights.map((insight, idx) => (
-                    <li key={idx}>{insight}</li>
+                    <li key={idx} className="relative pr-3">
+                      <span className="absolute right-0 text-brand-orange">•</span>
+                      {insight}
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -363,7 +374,7 @@ export default function ReportsPage() {
               {/* Actions */}
               <button 
                 onClick={handleSharePDF}
-                className="w-full py-3 rounded-2xl bg-[#7C6FD4] text-white text-xs font-black shadow-md hover:bg-[#7C6FD4]/90 transition-all flex items-center justify-center gap-1.5"
+                className="w-full py-3.5 rounded-2xl bg-brand-navy text-white text-xs font-black shadow-md hover:bg-brand-navy/90 transition-all flex items-center justify-center gap-1.5 focus:outline-none"
               >
                 <Share2 className="w-4 h-4" />
                 <span>{isRtl ? "تصدير التقرير كـ PDF" : "Export Report as PDF"}</span>
