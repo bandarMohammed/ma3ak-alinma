@@ -310,10 +310,16 @@ export interface CommitmentItem {
   id: string;
   merchant: string;
   category: string;
-  amount: number;
-  expectedDay: number;
-  status: "paid" | "unpaid";
+  emoji: string;
+  expectedAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  remainingPercentage: number;
+  dueDate: number;
+  status: "Completed" | "In Progress";
   date?: string;
+  duration?: string | number;
+  startMonth?: string;
 }
 
 export interface CommitmentsResult {
@@ -324,42 +330,106 @@ export interface CommitmentsResult {
   commitments_list: CommitmentItem[];
 }
 
-export function computeCommitments(txs: Transaction[], language: "ar" | "en"): CommitmentsResult {
+export function computeCommitments(
+  txs: Transaction[],
+  language: "ar" | "en",
+  customCommitments: Omit<CommitmentItem, "paidAmount" | "remainingAmount" | "remainingPercentage" | "status">[] = [],
+  deletedCommitments: string[] = []
+): CommitmentsResult {
   const isArabic = language === "ar";
   
   // 1. Determine current month from latest transaction
   const latestDateStr = deriveToday(txs); // e.g. "2026-05-29"
   const currentMonthPrefix = latestDateStr.substring(0, 7); // e.g. "2026-05"
+  const [currentYear, currentMonthVal] = currentMonthPrefix.split("-").map(Number);
 
   // 2. Default commitments definition
   const defaults = [
-    { merchant: "Emaar Real Estate", category: "Bills & Utilities", amount: 2500, expectedDay: 1 },
-    { merchant: "Mobily Home Internet", category: "Bills & Utilities", amount: 299, expectedDay: 5 },
-    { merchant: "Tawuniya Insurance", category: "Bills & Utilities", amount: 350, expectedDay: 10 },
-    { merchant: "Netflix", category: "Entertainment", amount: 56, expectedDay: 15 },
-    { merchant: "Alinma Auto Finance", category: "Bills & Utilities", amount: 1200, expectedDay: 27 },
-    { merchant: "stc pay", category: "Bills & Utilities", amount: 287.5, expectedDay: 28 }
+    { merchant: "Emaar Real Estate", category: "Bills & Utilities", emoji: "🏠", expectedAmount: 2500, dueDate: 1, duration: "ongoing", startMonth: "2025-01" },
+    { merchant: "Mobily Home Internet", category: "Bills & Utilities", emoji: "📶", expectedAmount: 299, dueDate: 5, duration: "ongoing", startMonth: "2025-01" },
+    { merchant: "Tawuniya Insurance", category: "Bills & Utilities", emoji: "🛡️", expectedAmount: 350, dueDate: 10, duration: "ongoing", startMonth: "2025-01" },
+    { merchant: "Netflix", category: "Entertainment", emoji: "🎬", expectedAmount: 56, duration: "ongoing", startMonth: "2025-01", dueDate: 15 },
+    { merchant: "Alinma Auto Finance", category: "Bills & Utilities", emoji: "🚗", expectedAmount: 1200, dueDate: 27, duration: "ongoing", startMonth: "2025-01" },
+    { merchant: "stc pay", category: "Bills & Utilities", emoji: "📱", expectedAmount: 287.5, dueDate: 28, duration: "ongoing", startMonth: "2025-01" }
   ];
 
-  // 3. Check current month transactions to see which are paid
+  // Filter out any default commitments that are deleted
+  const activeDefaults = defaults.filter(d => 
+    !deletedCommitments.some(del => del.toLowerCase() === d.merchant.toLowerCase())
+  );
+
+  // Merge custom commitments with active check
+  const merged = [...activeDefaults];
+  if (Array.isArray(customCommitments)) {
+    customCommitments.forEach(c => {
+      if (c && c.merchant) {
+        // Parse startMonth and duration
+        const startMonthStr = c.startMonth || currentMonthPrefix;
+        const [startY, startM] = startMonthStr.split("-").map(Number);
+        const durationVal = c.duration === undefined ? "ongoing" : c.duration;
+        
+        // Calculate months passed
+        const monthsPassed = (currentYear - startY) * 12 + (currentMonthVal - startM);
+        
+        let isActive = false;
+        if (durationVal === "ongoing") {
+          isActive = monthsPassed >= 0;
+        } else {
+          const durationNum = Number(durationVal);
+          isActive = monthsPassed >= 0 && monthsPassed < durationNum;
+        }
+        
+        if (isActive) {
+          const defaultIdx = merged.findIndex(m => m.merchant.toLowerCase() === c.merchant.toLowerCase());
+          const newObj = {
+            merchant: c.merchant,
+            category: c.category || "Bills & Utilities",
+            emoji: c.emoji || "📋",
+            expectedAmount: c.expectedAmount || 0,
+            dueDate: c.dueDate || 15,
+            duration: durationVal,
+            startMonth: startMonthStr
+          };
+          if (defaultIdx !== -1) {
+            merged[defaultIdx] = newObj;
+          } else {
+            merged.push(newObj);
+          }
+        }
+      }
+    });
+  }
+
+  // 3. Check current month transactions to see how much is paid
   const currentMonthTxs = txs.filter(t => t.transaction_date.startsWith(currentMonthPrefix) && t.type === "debit");
 
-  const commitments_list: CommitmentItem[] = defaults.map((item, idx) => {
-    const matchedTx = currentMonthTxs.find(t => t.merchant.toLowerCase().includes(item.merchant.toLowerCase()));
+  const commitments_list: CommitmentItem[] = merged.map((item, idx) => {
+    // Find all transactions for this merchant in the current month
+    const matchedTxs = currentMonthTxs.filter(t => t.merchant.toLowerCase().includes(item.merchant.toLowerCase()));
+    const paidAmount = matchedTxs.reduce((sum, t) => sum + t.amount, 0);
+    const remainingAmount = Math.max(0, item.expectedAmount - paidAmount);
+    const remainingPercentage = item.expectedAmount > 0 ? Math.round((remainingAmount / item.expectedAmount) * 100) : 0;
+    
     return {
       id: `commitment-${idx + 1}`,
       merchant: item.merchant,
       category: item.category,
-      amount: item.amount,
-      expectedDay: item.expectedDay,
-      status: matchedTx ? "paid" : "unpaid",
-      date: matchedTx ? matchedTx.transaction_date : undefined
+      emoji: item.emoji,
+      expectedAmount: item.expectedAmount,
+      paidAmount: round2(paidAmount),
+      remainingAmount: round2(remainingAmount),
+      remainingPercentage,
+      dueDate: item.dueDate,
+      status: remainingAmount === 0 ? "Completed" : "In Progress",
+      date: matchedTxs[0] ? matchedTxs[0].transaction_date : undefined,
+      duration: item.duration,
+      startMonth: item.startMonth
     };
   });
 
   // Calculate totals
-  const total_commitments = commitments_list.reduce((sum, item) => sum + item.amount, 0);
-  const total_paid = commitments_list.filter(item => item.status === "paid").reduce((sum, item) => sum + item.amount, 0);
+  const total_commitments = commitments_list.reduce((sum, item) => sum + item.expectedAmount, 0);
+  const total_paid = commitments_list.reduce((sum, item) => sum + item.paidAmount, 0);
   const paid_percentage = total_commitments > 0 ? Math.round((total_paid / total_commitments) * 100) : 0;
 
   return {

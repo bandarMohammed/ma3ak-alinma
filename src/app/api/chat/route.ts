@@ -4,6 +4,7 @@ import { Transaction } from "../../../lib/data/types";
 import { USE_MOCK_AI } from "../../../lib/data/config";
 import { SimulatorManager } from "../../../lib/simulator/manager";
 import { extractSimulationIntent } from "../../../lib/simulator/intent";
+import { runSimulationConversation, findPendingSim } from "../../../lib/simulator/conversation";
 import { computeReport, computeHabits, computeCommitments } from "../../../lib/finance/calculations";
 
 // Force Node.js runtime as required by Recharts/Next environments
@@ -12,12 +13,13 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { messages, transactions, language, balance, customCommitments } = body as {
+    const { messages, transactions, language, balance, customCommitments, deletedCommitments } = body as {
       messages: any[];
       transactions: Transaction[];
       language: "ar" | "en";
       balance?: number; // real account balance, sent from the client
       customCommitments?: any[];
+      deletedCommitments?: string[];
     };
 
     const isArabic = language === "ar";
@@ -146,7 +148,7 @@ export async function POST(req: Request) {
 
     // CAPABILITY 4 — MY COMMITMENTS THIS MONTH (numbers computed in code)
     if (isCommitmentsQuery) {
-      return NextResponse.json(computeCommitments(transactions, language, customCommitments));
+      return NextResponse.json(computeCommitments(transactions, language, customCommitments, deletedCommitments));
     }
 
     // ============================================================================
