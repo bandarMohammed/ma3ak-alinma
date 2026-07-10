@@ -78,17 +78,28 @@ export class PurchaseSimulator extends BaseSimulator {
     // instead of falling back to the phantom default installment.
     const installment = params.installment !== undefined ? params.installment : this.config.defaultInstallment;
     
+    const isCash = installment === 0;
     const finalPayment = params.finalPayment || 0; // optional balloon / final lump (financing)
     const downPaymentPercent = this.config.defaultDownPaymentPercent;
-    const downPaymentNow = params.downPayment !== undefined ? params.downPayment : Math.round(price * downPaymentPercent);
-    const downPaymentAdjusted = Math.round(price * 0.25); // 25% down payment for adjusted scenario
+    
+    const downPaymentNow = isCash 
+      ? price 
+      : (params.downPayment !== undefined ? params.downPayment : Math.round(price * downPaymentPercent));
 
-    const adjustedInstallment = Math.round(installment * 0.70); // ~30% reduction
+    const downPaymentAdjusted = isCash
+      ? Math.round(price * 0.75) // 25% cheaper model
+      : Math.round(price * 0.25); // 25% down payment
+
+    const adjustedInstallment = isCash
+      ? 0
+      : Math.round(installment * 0.70); // ~30% reduction
 
     // 1. Core metrics calculations for Proceed Today (Now)
     const dtiNow = calculateDTI(context.monthlyIncome, context.existingFinancingPayments, installment);
-    const emergencyMonthsNow = calculateEmergencyFundMonths(context.currentSavings, context.monthlyFixedExpenses, installment);
-    const savingsImpactNow = calculateSavingsReduction(installment, context.monthlyIncome, context.monthlyFixedExpenses, context.existingFinancingPayments);
+    // Deduct upfront cost from savings immediately if cash purchase
+    const savingsNow = isCash ? Math.max(0, context.currentSavings - price) : context.currentSavings;
+    const emergencyMonthsNow = calculateEmergencyFundMonths(savingsNow, context.monthlyFixedExpenses, installment);
+    const savingsImpactNow = isCash ? 0 : calculateSavingsReduction(installment, context.monthlyIncome, context.monthlyFixedExpenses, context.existingFinancingPayments);
     const currentSurplus = context.monthlyIncome - context.monthlyFixedExpenses - context.existingFinancingPayments;
     const newSurplusNow = currentSurplus - installment;
 
@@ -117,17 +128,29 @@ export class PurchaseSimulator extends BaseSimulator {
     const totalFinancingPaidAdjusted = downPaymentAdjusted + (adjustedInstallment * tenure) + finalPayment;
     const financingCostAdjusted = Math.max(0, totalFinancingPaidAdjusted - price);
 
-    const verdictNow = this.isRtl
-      ? `تكلفة تمويل إجمالية تبلغ ${financingCostNow.toLocaleString()} ريال. ${riskLevel === "High Risk" ? "مخاطرة مرتفعة على التدفقات النقدية." : "التزام شهري مباشر."}`
-      : `Total financing cost of ${financingCostNow.toLocaleString()} SAR. ${riskLevel === "High Risk" ? "High risk on cash flow." : "Direct monthly commitment."}`;
+    const verdictNow = isCash
+      ? (this.isRtl
+          ? `شراء نقدي فوري بمبلغ ${price.toLocaleString()} ريال، يقلص المدخرات مباشرة.`
+          : `One-time cash purchase of ${price.toLocaleString()} SAR, immediately reduces savings.`)
+      : (this.isRtl
+          ? `تكلفة تمويل إجمالية تبلغ ${financingCostNow.toLocaleString()} ريال. ${riskLevel === "High Risk" ? "مخاطرة مرتفعة على التدفقات النقدية." : "التزام شهري مباشر."}`
+          : `Total financing cost of ${financingCostNow.toLocaleString()} SAR. ${riskLevel === "High Risk" ? "High risk on cash flow." : "Direct monthly commitment."}`);
 
-    const verdictAdjusted = this.isRtl
-      ? `يخفض القسط بنسبة 30% إلى ${adjustedInstallment.toLocaleString()} ريال، مما يوفر أماناً مالياً أكبر.`
-      : `Reduces installment by 30% to ${adjustedInstallment.toLocaleString()} SAR, providing higher cash flow safety.`;
+    const verdictAdjusted = isCash
+      ? (this.isRtl
+          ? `بديل اقتصادي بقيمة ${downPaymentAdjusted.toLocaleString()} ريال (توفير 25%)، يقلل السحب من المدخرات.`
+          : `Cheaper alternative at ${downPaymentAdjusted.toLocaleString()} SAR (25% saved), preserves more savings.`)
+      : (this.isRtl
+          ? `يخفض القسط بنسبة 30% إلى ${adjustedInstallment.toLocaleString()} ريال، مما يوفر أماناً مالياً أكبر.`
+          : `Reduces installment by 30% to ${adjustedInstallment.toLocaleString()} SAR, providing higher cash flow safety.`);
 
-    const verdictWait = this.isRtl
-      ? `يسمح بمراكمة وفورات إضافية بقيمة ${(currentSurplus * 6).toLocaleString()} ريال قبل الالتزام بالقسط.`
-      : `Allows building additional savings of ${(currentSurplus * 6).toLocaleString()} SAR prior to starting installments.`;
+    const verdictWait = isCash
+      ? (this.isRtl
+          ? `تأجيل الشراء 6 أشهر وتجميع وفورات إضافية بقيمة ${(currentSurplus * 6).toLocaleString()} ريال.`
+          : `Delaying purchase for 6 months allows building ${(currentSurplus * 6).toLocaleString()} SAR in savings.`)
+      : (this.isRtl
+          ? `يسمح بمراكمة وفورات إضافية بقيمة ${(currentSurplus * 6).toLocaleString()} ريال قبل الالتزام بالقسط.`
+          : `Allows building additional savings of ${(currentSurplus * 6).toLocaleString()} SAR prior to starting installments.`);
 
     const projectionMonths = params.projectionMonths || params.tenure || this.config.projectionMonths;
     // A final/balloon payment lands at the end of the term, reducing every end balance.
@@ -143,7 +166,9 @@ export class PurchaseSimulator extends BaseSimulator {
         verdict: verdictNow
       },
       {
-        name: this.isRtl ? "زيادة الدفعة الأولى" : "Increase Down Payment",
+        name: isCash 
+          ? (this.isRtl ? "بديل اقتصادي" : "Cheaper Alternative")
+          : (this.isRtl ? "زيادة الدفعة الأولى" : "Increase Down Payment"),
         monthly_impact: -adjustedInstallment,
         balance_in_period: Math.round(endBalanceAdjusted),
         verdict: verdictAdjusted
@@ -161,40 +186,58 @@ export class PurchaseSimulator extends BaseSimulator {
     const savingsReductionPct = Math.round(savingsImpactNow * 100);
     const emergencyFundMonthsRounded = Math.round(emergencyMonthsNow * 10) / 10;
 
-    if (this.isRtl) {
-      insights.push({ text: `هذا الشراء يُقلّل من وفرك المالي الشهري المتاح للادخار بنسبة ${savingsReductionPct}%.` });
-      if (financingCostNow > 0) {
-        insights.push({ text: `ستتحمل تكاليف تمويل إضافية (أرباح/فوائد) تراكمية تبلغ ${financingCostNow.toLocaleString()} ريال.` });
-      }
-      insights.push({ text: `رصيد الطوارئ الحالي سيكفي لتغطية مصاريفك لمدة ${emergencyFundMonthsRounded} أشهر فقط بعد دفع القسط.` });
-      
-      const interestSaved = Math.max(0, financingCostNow - financingCostAdjusted);
-      if (interestSaved > 0) {
-        insights.push({ text: `زيادة الدفعة الأولى إلى 25% تُوفّر عليك ${interestSaved.toLocaleString()} ريال من تكلفة التمويل.` });
+    if (isCash) {
+      if (this.isRtl) {
+        insights.push({ text: `هذا الشراء يستقطع ${price.toLocaleString()} ريال مباشرة من رصيد مدخراتك الجارية.` });
+        insights.push({ text: `رصيد الطوارئ المتبقي سيكفي لتغطية مصاريفك لمدة ${emergencyFundMonthsRounded} أشهر بعد الشراء.` });
+        insights.push({ text: `اختيار بديل اقتصادي يوفر لك ${(price - downPaymentAdjusted).toLocaleString()} ريال فوراً في حسابك.` });
+      } else {
+        insights.push({ text: `This purchase immediately deducts ${price.toLocaleString()} SAR from your savings.` });
+        insights.push({ text: `Your emergency fund will cover only ${emergencyFundMonthsRounded} months of total expenses after this purchase.` });
+        insights.push({ text: `Opting for a cheaper alternative saves you ${(price - downPaymentAdjusted).toLocaleString()} SAR today.` });
       }
     } else {
-      insights.push({ text: `This purchase reduces your monthly savings capacity by ${savingsReductionPct}%.` });
-      if (financingCostNow > 0) {
-        insights.push({ text: `You will pay a total of ${financingCostNow.toLocaleString()} SAR in financing costs over the term.` });
-      }
-      insights.push({ text: `Your emergency fund will cover only ${emergencyFundMonthsRounded} months of total commitments.` });
-      
-      const interestSaved = Math.max(0, financingCostNow - financingCostAdjusted);
-      if (interestSaved > 0) {
-        insights.push({ text: `Increasing the down payment to 25% saves you ${interestSaved.toLocaleString()} SAR in financing costs.` });
+      if (this.isRtl) {
+        insights.push({ text: `هذا الشراء يُقلّل من وفرك المالي الشهري المتاح للادخار بنسبة ${savingsReductionPct}%.` });
+        if (financingCostNow > 0) {
+          insights.push({ text: `ستتحمل تكاليف تمويل إضافية (أرباح/فوائد) تراكمية تبلغ ${financingCostNow.toLocaleString()} ريال.` });
+        }
+        insights.push({ text: `رصيد الطوارئ الحالي سيكفي لتغطية مصاريفك لمدة ${emergencyFundMonthsRounded} أشهر فقط بعد دفع القسط.` });
+        
+        const interestSaved = Math.max(0, financingCostNow - financingCostAdjusted);
+        if (interestSaved > 0) {
+          insights.push({ text: `زيادة الدفعة الأولى إلى 25% تُوفّر عليك ${interestSaved.toLocaleString()} ريال من تكلفة التمويل.` });
+        }
+      } else {
+        insights.push({ text: `This purchase reduces your monthly savings capacity by ${savingsReductionPct}%.` });
+        if (financingCostNow > 0) {
+          insights.push({ text: `You will pay a total of ${financingCostNow.toLocaleString()} SAR in financing costs over the term.` });
+        }
+        insights.push({ text: `Your emergency fund will cover only ${emergencyFundMonthsRounded} months of total commitments.` });
+        
+        const interestSaved = Math.max(0, financingCostNow - financingCostAdjusted);
+        if (interestSaved > 0) {
+          insights.push({ text: `Increasing the down payment to 25% saves you ${interestSaved.toLocaleString()} SAR in financing costs.` });
+        }
       }
     }
 
     // 4. "Why?" diagnostic points
     const reasons: string[] = [];
-    if (dtiNow <= 0.33) {
+    if (isCash) {
       reasons.push(this.isRtl 
-        ? "نسبة الالتزام الشهري آمنة وتقل عن 33% من إجمالي دخلك." 
-        : "Monthly debt obligation ratio is safe and under 33% of your income.");
+        ? "الشراء النقدي يوفر عليك تكاليف الفوائد والتمويل الإضافية تماماً." 
+        : "Paying in cash completely avoids any interest charges or financing costs.");
     } else {
-      reasons.push(this.isRtl 
-        ? `نسبة الالتزام الشهري مرتفعة وتصل إلى ${Math.round(dtiNow * 100)}% مما يتجاوز الحدود الصحية.` 
-        : `Monthly debt obligation ratio is elevated at ${Math.round(dtiNow * 100)}%, exceeding healthy bounds.`);
+      if (dtiNow <= 0.33) {
+        reasons.push(this.isRtl 
+          ? "نسبة الالتزام الشهري آمنة وتقل عن 33% من إجمالي دخلك." 
+          : "Monthly debt obligation ratio is safe and under 33% of your income.");
+      } else {
+        reasons.push(this.isRtl 
+          ? `نسبة الالتزام الشهري مرتفعة وتصل إلى ${Math.round(dtiNow * 100)}% مما يتجاوز الحدود الصحية (33.33%).` 
+          : `Monthly debt obligation ratio is elevated at ${Math.round(dtiNow * 100)}%, exceeding healthy bounds (33.33%).`);
+      }
     }
 
     if (emergencyMonthsNow >= 4.0) {
@@ -211,14 +254,16 @@ export class PurchaseSimulator extends BaseSimulator {
         : `Emergency reserves are critical, covering only ${emergencyFundMonthsRounded} months.`);
     }
 
-    if (savingsImpactNow <= 0.30) {
-      reasons.push(this.isRtl 
-        ? "تأثير القسط على الفائض المالي منخفض ويسمح باستمرارية الادخار الجيد." 
-        : "The installment has a low impact on your monthly cash surplus, allowing continued savings.");
-    } else {
-      reasons.push(this.isRtl 
-        ? `القسط المقترح يستنزف نسبة كبيرة (${savingsReductionPct}%) من وفوراتك الجارية.` 
-        : `The proposed installment consumes a significant percentage (${savingsReductionPct}%) of your monthly surplus.`);
+    if (!isCash) {
+      if (savingsImpactNow <= 0.30) {
+        reasons.push(this.isRtl 
+          ? "تأثير القسط على الفائض المالي منخفض ويسمح باستمرارية الادخار الجيد." 
+          : "The installment has a low impact on your monthly cash surplus, allowing continued savings.");
+      } else {
+        reasons.push(this.isRtl 
+          ? `القسط المقترح يستنزف نسبة كبيرة (${savingsReductionPct}%) من وفوراتك الجارية.` 
+          : `The proposed installment consumes a significant percentage (${savingsReductionPct}%) of your monthly surplus.`);
+      }
     }
 
     if (failedShocksCount === 0) {
@@ -286,7 +331,9 @@ export class PurchaseSimulator extends BaseSimulator {
     // 7. Metric rows for comparison table
     const tableData: MetricRow[] = [
       {
-        metric: this.isRtl ? "الدفعة الأولى المطلوبة" : "Required Down Payment",
+        metric: isCash
+          ? (this.isRtl ? "تكلفة الشراء النقدي" : "Cash Purchase Cost")
+          : (this.isRtl ? "الدفعة الأولى المطلوبة" : "Required Down Payment"),
         scenarioNow: `${downPaymentNow.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
         scenarioAdjusted: `${downPaymentAdjusted.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
         scenarioWait: `${downPaymentNow.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`
@@ -300,14 +347,14 @@ export class PurchaseSimulator extends BaseSimulator {
       {
         metric: this.isRtl ? "أشهر تغطية الطوارئ" : "Emergency Coverage (Months)",
         scenarioNow: `${emergencyFundMonthsRounded}`,
-        scenarioAdjusted: `${(Math.round(calculateEmergencyFundMonths(context.currentSavings, context.monthlyFixedExpenses, adjustedInstallment) * 10) / 10)}`,
-        scenarioWait: `${(Math.round(calculateEmergencyFundMonths(context.currentSavings + (6 * currentSurplus), context.monthlyFixedExpenses, installment) * 10) / 10)}`
+        scenarioAdjusted: `${(Math.round(calculateEmergencyFundMonths(Math.max(0, context.currentSavings - downPaymentAdjusted), context.monthlyFixedExpenses, adjustedInstallment) * 10) / 10)}`,
+        scenarioWait: `${(Math.round(calculateEmergencyFundMonths(Math.max(0, context.currentSavings + (6 * currentSurplus) - downPaymentNow), context.monthlyFixedExpenses, installment) * 10) / 10)}`
       },
       {
         metric: this.isRtl ? "تكلفة التمويل الإضافية" : "Financing Cost",
         scenarioNow: `${financingCostNow.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
         scenarioAdjusted: `${financingCostAdjusted.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
-        scenarioWait: `${financingCostNow.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"} (تأجيل)`
+        scenarioWait: `${financingCostNow.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}${this.isRtl ? " (تأجيل)" : " (Delayed)"}`
       }
     ];
 
@@ -325,9 +372,13 @@ export class PurchaseSimulator extends BaseSimulator {
     // Summary text
     let summary = "";
     if (this.isRtl) {
-      summary = `وفقاً لبياناتك المالية المتاحة، يُشير التحليل المالي إلى أن خيار الشراء فوراً يُمثّل درجة أمان مقدرة بـ ${score}/100 وبمعدل مخاطر (${riskLevel}). بناءً عليه، يتضح من تحليل سلوكك الإنفاقي أن اعتماد سيناريو تأجيل الشراء لمدة 6 أشهر أو رفع الدفعة الأولى لـ 25% يظل الخيار الأمثل لحماية خطتك الادخارية وتجنب الضغوط المعيشية الجارية.`;
+      summary = isCash
+        ? `وفقاً لبياناتك المالية المتاحة، يُشير التحليل المالي إلى أن خيار الشراء نقداً فوراً يُمثّل درجة أمان مقدرة بـ ${score}/100 وبمعدل مخاطر (${riskLevel}). بناءً عليه، يتضح أن شراء بديل اقتصادي (توفير 25%) أو تأجيل الشراء لمدة 6 أشهر هو الخيار الأمثل لحماية خطتك الادخارية وتفادي السحب الكامل لمدخراتك.`
+        : `وفقاً لبياناتك المالية المتاحة، يُشير التحليل المالي إلى أن خيار الشراء فوراً يُمثّل درجة أمان مقدرة بـ ${score}/100 وبمعدل مخاطر (${riskLevel}). بناءً عليه، يتضح من تحليل سلوكك الإنفاقي أن اعتماد سيناريو تأجيل الشراء لمدة 6 أشهر أو رفع الدفعة الأولى لـ 25% يظل الخيار الأمثل لحماية خطتك الادخارية وتجنب الضغوط المعيشية الجارية.`;
     } else {
-      summary = `Based on your available financial data, the simulation estimates the safety of this decision at ${score}/100 with a risk rating of ${riskLevel}. Financial analysis indicates that postponing this purchase for 6 months or increasing the down payment to 25% is recommended to preserve your cash buffer and secure your savings plan.`;
+      summary = isCash
+        ? `Based on your available financial data, the simulation estimates the safety of this cash purchase at ${score}/100 with a risk rating of ${riskLevel}. Financial analysis indicates that choosing a cheaper alternative (saving 25%) or postponing the purchase for 6 months is recommended to avoid depleting your savings buffer.`
+        : `Based on your available financial data, the simulation estimates the safety of this decision at ${score}/100 with a risk rating of ${riskLevel}. Financial analysis indicates that postponing this purchase for 6 months or increasing the down payment to 25% is recommended to preserve your cash buffer and secure your savings plan.`;
     }
 
     return {

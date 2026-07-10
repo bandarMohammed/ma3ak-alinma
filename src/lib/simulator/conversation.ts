@@ -230,7 +230,8 @@ export function runSimulationConversation(
   messages: any[],
   transactions: Transaction[],
   language: "ar" | "en",
-  seed?: ExtractedIntent | null
+  seed?: ExtractedIntent | null,
+  balance?: number
 ): ConversationResult {
   const isRtl = language === "ar";
   const userText = messages[messages.length - 1]?.content || "";
@@ -275,7 +276,7 @@ export function runSimulationConversation(
     installment: collected.installment ?? null,
     finalPayment: collected.finalPayment ?? null
   };
-  return SimulatorManager.simulateFromParams(intent, transactions, language) as ConversationResult;
+  return SimulatorManager.simulateFromParams(intent, transactions, language, balance) as ConversationResult;
 }
 
 function slotKey(slot: SimulationSlot): keyof Collected {

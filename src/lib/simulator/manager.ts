@@ -2,45 +2,18 @@ import { UserContext, SimulationResult, ExtractedIntent } from "./types";
 import { PurchaseSimulator } from "./modules/purchase";
 import { LoanSimulator } from "./modules/loan";
 import { Transaction } from "../data/types";
+import { buildFinancialProfile } from "../finance/calculations";
 
 export type SimulationOrTextResult = SimulationResult | { type: "text"; content: string };
 
 export class SimulatorManager {
   /**
-   * Auto-calculates UserContext (income, fixed expenses, savings, obligations) from transaction history
+   * Builds the financial profile (income, avg outflow, real savings balance, financing) used by
+   * the simulators. Delegates to the single-source-of-truth calculations module — no math here.
+   * `balance` is the real account balance (sent from the client); falls back safely if absent.
    */
-  public static calculateUserContext(transactions: Transaction[]): UserContext {
-    const currentSavings = transactions.length > 0 ? transactions[0].amount : 12450.75;
-
-    const salaryTxs = transactions.filter(t => t.category === "Salary" || t.type === "credit");
-    let monthlyIncome = 15000;
-    if (salaryTxs.length > 0) {
-      const sum = salaryTxs.reduce((acc, t) => acc + t.amount, 0);
-      monthlyIncome = Math.round(sum / 6);
-      if (monthlyIncome <= 0) monthlyIncome = 15000;
-    }
-
-    const existingFinancingPayments = 2000; 
-
-    const debitTxs = transactions.filter(
-      t => t.type === "debit" && 
-      t.category !== "Transfers" && 
-      t.merchant !== "Jarir Bookstore"
-    );
-    
-    let monthlyFixedExpenses = 9500;
-    if (debitTxs.length > 0) {
-      const sum = debitTxs.reduce((acc, t) => acc + t.amount, 0);
-      monthlyFixedExpenses = Math.round(sum / 6);
-      if (monthlyFixedExpenses <= 0) monthlyFixedExpenses = 9500;
-    }
-
-    return {
-      monthlyIncome,
-      monthlyFixedExpenses,
-      currentSavings,
-      existingFinancingPayments
-    };
+  public static calculateUserContext(transactions: Transaction[], balance?: number): UserContext {
+    return buildFinancialProfile(transactions, balance);
   }
 
   /**
@@ -69,15 +42,16 @@ export class SimulatorManager {
    * Run decision simulation based on user message and transaction history
    */
   public static simulate(
-    query: string, 
-    transactions: Transaction[], 
-    language: "ar" | "en"
+    query: string,
+    transactions: Transaction[],
+    language: "ar" | "en",
+    balance?: number
   ): SimulationOrTextResult {
     const queryLower = query.toLowerCase();
     const isRtl = language === "ar";
 
-    // 1. Calculate user context from transactions
-    const context = this.calculateUserContext(transactions);
+    // 1. Calculate user context from transactions (real balance when provided)
+    const context = this.calculateUserContext(transactions, balance);
 
     // 2. Classify intent: Category 2 (Financing/Loans/Installments) vs Category 1 (One-Time Purchase)
     const isFinancingQuery = 
@@ -340,10 +314,11 @@ export class SimulatorManager {
   public static simulateFromParams(
     intent: ExtractedIntent,
     transactions: Transaction[],
-    language: "ar" | "en"
+    language: "ar" | "en",
+    balance?: number
   ): SimulationOrTextResult {
     const isRtl = language === "ar";
-    const context = this.calculateUserContext(transactions);
+    const context = this.calculateUserContext(transactions, balance);
     const meta = this.CATEGORY_META[intent.category] || this.CATEGORY_META.generic;
 
     // Need a cost/amount to run any simulation

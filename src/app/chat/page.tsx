@@ -23,8 +23,8 @@ import html2canvas from "html2canvas";
 export default function ChatPage() {
   const router = useRouter();
   const { t, language, isRtl } = useLanguage();
-  const { 
-    user, messages, transactions, actionLoading, activeConversationId,
+  const {
+    user, messages, transactions, accounts, actionLoading, activeConversationId,
     sendChatMessage, receiveAssistantResponse, startNewConversation,
     setActiveConversation, saveReport, savedReports
   } = useStore();
@@ -81,7 +81,8 @@ export default function ChatPage() {
             { role: "user", content: text }
           ],
           transactions,
-          language
+          language,
+          balance: accounts?.[0]?.balance // real account balance → code uses it as savings
         })
       });
 
