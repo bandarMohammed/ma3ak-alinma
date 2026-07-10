@@ -14,7 +14,7 @@ import {
 import { 
   Bot, Send, Sparkles, Mic, Receipt, Calendar, ArrowRight, Save, Share,
   FileText, TrendingUp, AlertCircle, Sparkle, BarChart, Gauge, Activity,
-  CheckCircle2, AlertTriangle, Coins
+  CheckCircle2, AlertTriangle, Coins, X
 } from "lucide-react";
 import { getCategoryIcon } from "../../lib/utils";
 import jsPDF from "jspdf";
@@ -26,7 +26,7 @@ export default function ChatPage() {
   const {
     user, messages, transactions, accounts, actionLoading, activeConversationId,
     sendChatMessage, receiveAssistantResponse, startNewConversation,
-    setActiveConversation, saveReport, savedReports
+    setActiveConversation, saveReport, savedReports, createTransaction
   } = useStore();
 
   const [input, setInput] = useState("");
@@ -37,6 +37,67 @@ export default function ChatPage() {
   const [startDate, setStartDate] = useState("2026-05-01");
   const [endDate, setEndDate] = useState("2026-05-29");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Custom Commitments State
+  const [showAddCommitment, setShowAddCommitment] = useState(false);
+  const [newCommitmentMerchant, setNewCommitmentMerchant] = useState("");
+  const [newCommitmentAmount, setNewCommitmentAmount] = useState("");
+  const [newCommitmentDay, setNewCommitmentDay] = useState("15");
+  const [newCommitmentCategory, setNewCommitmentCategory] = useState("Bills & Utilities");
+
+  const handlePayCommitment = async (merchant: string, amount: number) => {
+    try {
+      await createTransaction({
+        amount,
+        type: "debit",
+        category: "Bills & Utilities",
+        merchant,
+        description: isRtl ? `سداد التزام - ${merchant}` : `Commitment Payment - ${merchant}`,
+        transaction_date: new Date().toISOString().split("T")[0]
+      });
+      setToastMessage(isRtl ? "تم سداد الالتزام بنجاح ✓" : "Commitment paid successfully ✓");
+      setTimeout(() => setToastMessage(null), 3000);
+      
+      // Auto-refresh the list
+      setTimeout(() => {
+        handleSendMessage(isRtl ? "عرض التزاماتي هذا الشهر" : "Show my commitments this month");
+      }, 1000);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAddCommitmentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(newCommitmentAmount);
+    const day = parseInt(newCommitmentDay);
+    if (!newCommitmentMerchant || isNaN(amt) || amt <= 0 || isNaN(day) || day < 1 || day > 31) return;
+
+    const stored = JSON.parse(localStorage.getItem("ma3ak_custom_commitments") || "[]");
+    const newItem = {
+      merchant: newCommitmentMerchant,
+      amount: amt,
+      expectedDay: day,
+      category: newCommitmentCategory
+    };
+    stored.push(newItem);
+    localStorage.setItem("ma3ak_custom_commitments", JSON.stringify(stored));
+
+    // Reset fields & modal
+    setNewCommitmentMerchant("");
+    setNewCommitmentAmount("");
+    setNewCommitmentDay("15");
+    setNewCommitmentCategory("Bills & Utilities");
+    setShowAddCommitment(false);
+
+    setToastMessage(isRtl ? "تم إضافة الالتزام بنجاح ✓" : "Commitment added successfully ✓");
+    setTimeout(() => setToastMessage(null), 3000);
+
+    // Refresh list
+    setTimeout(() => {
+      handleSendMessage(isRtl ? "عرض التزاماتي هذا الشهر" : "Show my commitments this month");
+    }, 500);
+  };
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -82,7 +143,8 @@ export default function ChatPage() {
           ],
           transactions,
           language,
-          balance: accounts?.[0]?.balance // real account balance → code uses it as savings
+          balance: accounts?.[0]?.balance,
+          customCommitments: typeof window !== "undefined" ? JSON.parse(localStorage.getItem("ma3ak_custom_commitments") || "[]") : []
         })
       });
 
@@ -96,7 +158,9 @@ export default function ChatPage() {
           ? data.content
           : data.type === "simulation"
             ? (isRtl ? "إليك تحليل المحاكاة المالية لقرارك:" : "Here is the financial simulation for your decision:")
-            : (isRtl ? "إليك التقرير الذي طلبته:" : "Here is the report you requested:"),
+            : data.type === "commitments"
+              ? (isRtl ? "إليك قائمة التزاماتك المالية المستحقة والمدفوعة لهذا الشهر:" : "Here is the list of your paid and unpaid financial commitments for this month:")
+              : (isRtl ? "إليك التقرير الذي طلبته:" : "Here is the report you requested:"),
         metadata: {
           type: data.type,
           reportData: data.type === "report" ? {
@@ -108,6 +172,7 @@ export default function ChatPage() {
             insights: data.insights
           } : undefined,
           simulationData: data.type === "simulation" ? data : undefined,
+          commitmentsData: data.type === "commitments" ? data : undefined,
           // Round-trips the in-progress conversational simulation state so the
           // stateless API can resume slot-filling on the next user message.
           pendingSim: data.pendingSim ?? undefined
@@ -325,7 +390,7 @@ export default function ChatPage() {
               </div>
 
               {/* GRID OF CAPABILITIES / RECOMMENDATIONS */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-2xl mt-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl mt-4">
                 
                 {/* 1. REPORT CARD */}
                 <motion.button
@@ -383,6 +448,26 @@ export default function ChatPage() {
                     </h4>
                     <p className="text-[9.5px] font-bold text-brand-navy/45 leading-normal">
                       {isRtl ? "التنبؤ بالأثر المالي لقسط سيارة أو قرض خلال ١٢ شهراً." : "Forecast the cashflow impact of buying a car or device in installments."}
+                    </p>
+                  </div>
+                </motion.button>
+
+                {/* 4. COMMITMENTS CARD */}
+                <motion.button
+                  whileHover={{ y: -4, scale: 1.01 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => handleSendMessage(isRtl ? "عرض التزاماتي هذا الشهر" : "Show my commitments this month")}
+                  className="bg-white rounded-2xl p-5 border border-brand-navy/5 shadow-sm text-right flex flex-col justify-between h-36 relative overflow-hidden group hover:border-brand-purple/25 transition-all focus:outline-none"
+                >
+                  <div className="w-9 h-9 bg-[#EBF7EE] flex items-center justify-center rounded-xl text-[#2E7D4F] mb-3">
+                    <Receipt className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-brand-navy group-hover:text-brand-purple transition-colors mb-1">
+                      {isRtl ? "التزاماتي هذا الشهر" : "My Commitments This Month"}
+                    </h4>
+                    <p className="text-[9.5px] font-bold text-brand-navy/45 leading-normal">
+                      {isRtl ? "تتبع الالتزامات الثابتة والمستحقة (أقساط، إيجار، فواتير) وسدادها." : "Track and pay fixed recurring bills, rent, and installments."}
                     </p>
                   </div>
                 </motion.button>
@@ -839,6 +924,128 @@ export default function ChatPage() {
                             </motion.div>
                           )}
 
+                          {/* =========================================================
+                              3. DYNAMIC COMMITMENTS CARD
+                              ========================================================= */}
+                          {msg.metadata.type === "commitments" && msg.metadata.commitmentsData && (
+                            <motion.div
+                              initial={{ scale: 0.98, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              className="bg-white rounded-[32px] p-6 border border-brand-navy/5 shadow-lg space-y-5 w-full max-w-md mx-auto"
+                            >
+                              {/* Header */}
+                              <div className="flex items-center justify-between gap-3 text-brand-purple">
+                                <button
+                                  onClick={() => setShowAddCommitment(true)}
+                                  className="px-3 py-1 bg-brand-purple/10 text-brand-purple rounded-full text-[10px] font-black hover:bg-brand-purple/20 transition-all focus:outline-none"
+                                >
+                                  {isRtl ? "+ إضافة التزام" : "+ Add Commitment"}
+                                </button>
+                                <div className="flex items-center gap-2">
+                                  <h4 className="text-sm font-black text-brand-navy">
+                                    {isRtl ? "التزاماتي هذا الشهر" : "My Commitments"}
+                                  </h4>
+                                  <Receipt className="w-5 h-5 text-brand-purple" />
+                                </div>
+                              </div>
+
+                              {/* Paid Ratio Progress Box */}
+                              {(() => {
+                                const data = msg.metadata.commitmentsData;
+                                const total = data.total_commitments || 0;
+                                const paid = data.total_paid || 0;
+                                const percentage = data.paid_percentage || 0;
+                                const unpaid = Math.max(0, total - paid);
+
+                                return (
+                                  <div className="bg-brand-cream/35 border border-brand-navy/5 p-4 rounded-2xl space-y-3">
+                                    {/* Figures */}
+                                    <div className="flex justify-between items-center text-[10px] font-black text-brand-navy">
+                                      <div className="text-left text-brand-orange">
+                                        <span className="text-brand-navy/40 block text-[8px] uppercase tracking-wide">{isRtl ? "المتبقي" : "Remaining"}</span>
+                                        <span>{unpaid.toLocaleString()} {t("sar")}</span>
+                                      </div>
+                                      <div className="text-center text-brand-purple">
+                                        <span className="text-brand-navy/40 block text-[8px] uppercase tracking-wide">{isRtl ? "النسبة المدفوعة" : "Paid Ratio"}</span>
+                                        <span className="text-xs font-black">{percentage}%</span>
+                                      </div>
+                                      <div className="text-right text-brand-success">
+                                        <span className="text-brand-navy/40 block text-[8px] uppercase tracking-wide">{isRtl ? "المدفوع" : "Paid"}</span>
+                                        <span>{paid.toLocaleString()} {t("sar")}</span>
+                                      </div>
+                                    </div>
+
+                                    {/* Progress Bar */}
+                                    <div className="w-full h-3.5 bg-brand-cream rounded-full overflow-hidden p-0.5 border border-brand-navy/5">
+                                      <div 
+                                        className="h-full bg-gradient-to-r from-brand-purple to-brand-lightNavy rounded-full transition-all duration-700 ease-out"
+                                        style={{ width: `${percentage}%` }}
+                                      ></div>
+                                    </div>
+                                    
+                                    <div className="text-center text-[9px] font-bold text-brand-navy/45">
+                                      {isRtl 
+                                        ? `تم سداد ${data.commitments_list.filter((x: any) => x.status === "paid").length} من أصل ${data.commitments_list.length} التزامات دورية`
+                                        : `Paid ${data.commitments_list.filter((x: any) => x.status === "paid").length} of ${data.commitments_list.length} monthly commitments`}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* List of Commitments */}
+                              <div className="space-y-2.5">
+                                {msg.metadata.commitmentsData.commitments_list.map((c: any) => {
+                                  const isPaid = c.status === "paid";
+                                  const Icon = getCategoryIcon(c.category);
+                                  
+                                  return (
+                                    <div 
+                                      key={c.id} 
+                                      className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all duration-300 ${
+                                        isPaid 
+                                          ? "bg-brand-cream/10 border-brand-success/15" 
+                                          : "bg-white border-brand-navy/5 shadow-sm hover:border-brand-navy/10"
+                                      }`}
+                                    >
+                                      {/* Left side actions or status badge */}
+                                      <div>
+                                        {isPaid ? (
+                                          <span className="px-2.5 py-1 bg-brand-success/10 text-brand-success text-[9px] font-black rounded-lg flex items-center gap-1.5 border border-brand-success/15 animate-fade-in">
+                                            <span className="w-1.5 h-1.5 bg-brand-success rounded-full"></span>
+                                            {isRtl ? "تم السداد" : "Paid"}
+                                          </span>
+                                        ) : (
+                                          <button
+                                            onClick={() => handlePayCommitment(c.merchant, c.amount)}
+                                            className="px-3 py-1.5 bg-brand-navy text-white text-[9.5px] font-black rounded-xl hover:bg-brand-navy/90 shadow-sm transition-all focus:outline-none flex items-center gap-1 hover:scale-102 active:scale-98"
+                                          >
+                                            <Coins className="w-3.5 h-3.5" />
+                                            {isRtl ? "سداد الآن" : "Pay Now"}
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      {/* Right side description */}
+                                      <div className="flex items-center gap-3 text-right">
+                                        <div>
+                                          <h5 className="text-xs font-black text-brand-navy">{c.merchant}</h5>
+                                          <span className="text-[9px] font-bold text-brand-navy/40 block mt-0.5">
+                                            {isRtl 
+                                              ? `يستحق في يوم ${c.expectedDay} من الشهر • ${c.amount.toLocaleString()} ريال` 
+                                              : `Due on Day ${c.expectedDay} • ${c.amount.toLocaleString()} SAR`}
+                                          </span>
+                                        </div>
+                                        <div className="w-9 h-9 bg-brand-cream/45 rounded-xl flex items-center justify-center text-brand-navy/70 border border-brand-navy/5 flex-shrink-0">
+                                          <Icon className="w-4.5 h-4.5" />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </motion.div>
+                          )}
+
                         </div>
                       )}
 
@@ -902,6 +1109,15 @@ export default function ChatPage() {
           <Sparkle className="w-3.5 h-3.5 text-brand-orange" />
           <span>{t("chipSimulate")}</span>
         </motion.button>
+
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={() => handleSendMessage(isRtl ? "عرض التزاماتي هذا الشهر" : "Show my commitments this month")}
+          className="px-3.5 py-2 bg-white text-brand-navy/70 border border-brand-navy/5 rounded-full text-[10px] font-extrabold shadow-sm hover:border-brand-purple/20 hover:text-brand-purple flex-shrink-0 flex items-center gap-1.5"
+        >
+          <Receipt className="w-3.5 h-3.5 text-brand-success" />
+          <span>{isRtl ? "التزاماتي" : "My Commitments"}</span>
+        </motion.button>
       </div>
 
       {/* DATE RANGE PICKER MODAL TRIGGER CARD */}
@@ -952,6 +1168,123 @@ export default function ChatPage() {
               <span>{t("generateReport")}</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ADD COMMITMENT MODAL */}
+      <AnimatePresence>
+        {showAddCommitment && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-brand-navy/60 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-4"
+          >
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 220 }}
+              className="bg-white rounded-t-[32px] md:rounded-3xl w-full max-w-md p-6 relative border border-brand-navy/5 shadow-2xl space-y-4 text-right"
+            >
+              <div className="flex justify-between items-center border-b border-brand-navy/5 pb-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAddCommitment(false)}
+                  className="p-1.5 rounded-full bg-brand-cream/50 text-brand-navy/60 hover:bg-brand-cream hover:text-brand-navy transition-colors focus:outline-none"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <h3 className="text-sm font-black text-brand-navy flex items-center gap-2 justify-end">
+                  <span>{isRtl ? "إضافة التزام مالي جديد" : "Add New Commitment"}</span>
+                  <Receipt className="w-5 h-5 text-brand-purple" />
+                </h3>
+              </div>
+
+              <form onSubmit={handleAddCommitmentSubmit} className="space-y-4">
+                {/* Merchant Name */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-brand-navy/70 block">
+                    {isRtl ? "اسم الجهة المستفيدة / المورد" : "Merchant / Provider Name"}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newCommitmentMerchant}
+                    onChange={(e) => setNewCommitmentMerchant(e.target.value)}
+                    placeholder={isRtl ? "مثال: وقت اللياقة" : "e.g., Fitness Time"}
+                    className="w-full px-4 py-3 rounded-2xl bg-brand-cream/40 border border-brand-navy/10 text-brand-navy text-xs font-bold focus:outline-none focus:border-brand-purple transition-all text-right"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Expected Day */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-brand-navy/70 block">
+                      {isRtl ? "يوم الاستحقاق الشهري" : "Monthly Due Day"}
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      max="31"
+                      value={newCommitmentDay}
+                      onChange={(e) => setNewCommitmentDay(e.target.value)}
+                      placeholder="15"
+                      className="w-full px-4 py-3 rounded-2xl bg-brand-cream/40 border border-brand-navy/10 text-brand-navy text-xs font-bold focus:outline-none focus:border-brand-purple transition-all text-center"
+                    />
+                  </div>
+
+                  {/* Amount */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#1B2A4A] block">
+                      {isRtl ? "القيمة (ريال)" : "Amount (SAR)"}
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={newCommitmentAmount}
+                      onChange={(e) => setNewCommitmentAmount(e.target.value)}
+                      placeholder="350"
+                      className="w-full px-4 py-3 rounded-2xl bg-brand-cream/40 border border-brand-navy/10 text-brand-navy text-xs font-bold focus:outline-none focus:border-brand-purple transition-all text-center"
+                    />
+                  </div>
+                </div>
+
+                {/* Category Selector */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-brand-navy/70 block">
+                    {isRtl ? "التصنيف المالي" : "Financial Category"}
+                  </label>
+                  <select
+                    value={newCommitmentCategory}
+                    onChange={(e) => setNewCommitmentCategory(e.target.value)}
+                    className="w-full px-4 py-3 rounded-2xl bg-brand-cream/40 border border-brand-navy/10 text-brand-navy text-xs font-bold focus:outline-none focus:border-brand-purple transition-all"
+                    style={{ direction: isRtl ? "rtl" : "ltr" }}
+                  >
+                    <option value="Bills & Utilities">{isRtl ? "الفواتير والخدمات العامة" : "Bills & Utilities"}</option>
+                    <option value="Entertainment">{isRtl ? "الترفيه والتسلية" : "Entertainment"}</option>
+                    <option value="Food & Restaurants">{isRtl ? "المطاعم والأغذية" : "Food & Restaurants"}</option>
+                    <option value="Shopping">{isRtl ? "التسوق" : "Shopping"}</option>
+                    <option value="Transportation">{isRtl ? "النقل والمواصلات" : "Transportation"}</option>
+                    <option value="Healthcare">{isRtl ? "الصحة والعافية" : "Healthcare"}</option>
+                  </select>
+                </div>
+
+                {/* Submit button */}
+                <motion.button
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                  type="submit"
+                  className="w-full py-3 rounded-2xl bg-brand-navy text-white text-xs font-black shadow-md hover:bg-brand-navy/95 transition-all mt-4 flex items-center justify-center gap-2"
+                >
+                  <Receipt className="w-4 h-4" />
+                  <span>{isRtl ? "تأكيد إضافة الالتزام" : "Confirm Add Commitment"}</span>
+                </motion.button>
+              </form>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

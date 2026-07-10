@@ -305,3 +305,68 @@ Please note that this analysis is based on available data and is for advisory pu
 
   return { type: "text", content };
 }
+
+export interface CommitmentItem {
+  id: string;
+  merchant: string;
+  category: string;
+  amount: number;
+  expectedDay: number;
+  status: "paid" | "unpaid";
+  date?: string;
+}
+
+export interface CommitmentsResult {
+  type: "commitments";
+  total_commitments: number;
+  total_paid: number;
+  paid_percentage: number;
+  commitments_list: CommitmentItem[];
+}
+
+export function computeCommitments(txs: Transaction[], language: "ar" | "en"): CommitmentsResult {
+  const isArabic = language === "ar";
+  
+  // 1. Determine current month from latest transaction
+  const latestDateStr = deriveToday(txs); // e.g. "2026-05-29"
+  const currentMonthPrefix = latestDateStr.substring(0, 7); // e.g. "2026-05"
+
+  // 2. Default commitments definition
+  const defaults = [
+    { merchant: "Emaar Real Estate", category: "Bills & Utilities", amount: 2500, expectedDay: 1 },
+    { merchant: "Mobily Home Internet", category: "Bills & Utilities", amount: 299, expectedDay: 5 },
+    { merchant: "Tawuniya Insurance", category: "Bills & Utilities", amount: 350, expectedDay: 10 },
+    { merchant: "Netflix", category: "Entertainment", amount: 56, expectedDay: 15 },
+    { merchant: "Alinma Auto Finance", category: "Bills & Utilities", amount: 1200, expectedDay: 27 },
+    { merchant: "stc pay", category: "Bills & Utilities", amount: 287.5, expectedDay: 28 }
+  ];
+
+  // 3. Check current month transactions to see which are paid
+  const currentMonthTxs = txs.filter(t => t.transaction_date.startsWith(currentMonthPrefix) && t.type === "debit");
+
+  const commitments_list: CommitmentItem[] = defaults.map((item, idx) => {
+    const matchedTx = currentMonthTxs.find(t => t.merchant.toLowerCase().includes(item.merchant.toLowerCase()));
+    return {
+      id: `commitment-${idx + 1}`,
+      merchant: item.merchant,
+      category: item.category,
+      amount: item.amount,
+      expectedDay: item.expectedDay,
+      status: matchedTx ? "paid" : "unpaid",
+      date: matchedTx ? matchedTx.transaction_date : undefined
+    };
+  });
+
+  // Calculate totals
+  const total_commitments = commitments_list.reduce((sum, item) => sum + item.amount, 0);
+  const total_paid = commitments_list.filter(item => item.status === "paid").reduce((sum, item) => sum + item.amount, 0);
+  const paid_percentage = total_commitments > 0 ? Math.round((total_paid / total_commitments) * 100) : 0;
+
+  return {
+    type: "commitments",
+    total_commitments: round2(total_commitments),
+    total_paid: round2(total_paid),
+    paid_percentage,
+    commitments_list
+  };
+}
