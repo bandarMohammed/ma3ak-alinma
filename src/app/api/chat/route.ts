@@ -98,10 +98,12 @@ export async function POST(req: Request) {
         queryLower.includes("history") ||
         queryLower.includes("week") ||
         queryLower.includes("أسبوع") ||
-        queryLower.includes("شهر الماضي") ||
+        queryLower.includes("الشهر الماضي") ||
         queryLower.includes("last month") ||
-        queryLower.includes("تاريخ")
+        queryLower.includes("تاريخ معاملاتي") ||
+        queryLower.includes("سجل معاملاتي")
       );
+
 
     // --- Capability: Financial Reports ---
     if (isReportQuery) {
