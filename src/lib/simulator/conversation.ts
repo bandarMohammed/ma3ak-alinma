@@ -87,7 +87,7 @@ function detectCategory(text: string): ExtractedIntent["category"] {
 function questionFor(slot: SimulationSlot, isRtl: boolean): string {
   const q: Record<SimulationSlot, [string, string]> = {
     financingType: [
-      "لأقدّم لك استشارة دقيقة، هل هذا القرار **تمويل/أقساط** أم **مبلغ نقدي** تدفعه دفعة واحدة؟",
+      "لأقدّم لك استشارة دقيقة، هل هذا القرار **تمويل/أقساط** أم **مبلغ نقدي (كاش)** تدفعه دفعة واحدة؟",
       "To advise you accurately, is this decision a **loan/installment** or a **one-time cash** payment?"
     ],
     amount: [
@@ -95,31 +95,24 @@ function questionFor(slot: SimulationSlot, isRtl: boolean): string {
       "Understood. What is the estimated **total amount** in SAR?"
     ],
     installment: [
-      "وكم قيمة **القسط الشهري** المتوقع بالريال؟",
-      "And what is the expected **monthly installment** in SAR?"
+      "كم القسط الشهري؟",
+      "How much is the monthly installment?"
     ],
     downPayment: [
-      "كم **الدفعة الأولى (المقدّم)**؟ اكتب 0 إن لم توجد.",
-      "How much is the **down payment**? Enter 0 if there is none."
+      "كم ممكن الدفعه الاوله اذا مافي قول لا؟",
+      "How much is the down payment? If there is none, say no."
     ],
     finalPayment: [
-      "هل توجد **دفعة أخيرة / دفعة نهائية**؟ اكتب قيمتها، أو اكتب «لا».",
-      "Is there a **final / balloon payment**? Enter the amount, or type \"no\"."
+      "هل في دفعه اخيره اذا لا اكتب لا ؟",
+      "Is there a final payment? If there is none, write no."
     ],
     tenure: [
-      "كم **مدة السداد**؟ (مثال: 6 أشهر، سنة، سنتين)",
-      "What is the **repayment period**? (e.g., 6 months, 1 year, 2 years)"
+      "كم مدت القسط بالشهور ؟",
+      "What is the installment period in months?"
     ]
   };
   const [ar, en] = q[slot];
   return isRtl ? ar : en;
-}
-
-/** For a cash purchase we ask a projection horizon instead of a repayment period. */
-function horizonQuestion(isRtl: boolean): string {
-  return isRtl
-    ? "على أي **مدة** تريد أن نتابع أثر هذا القرار على رصيدك؟ (مثال: 6 أشهر أو سنة)"
-    : "Over what **period** should we track this decision's impact on your balance? (e.g., 6 months or 1 year)";
 }
 
 // ============================================================================
@@ -130,15 +123,13 @@ type Collected = PendingSim["collected"];
 
 /** Returns the next unanswered slot, or null when everything is collected. */
 function nextMissingSlot(c: Collected): SimulationSlot | null {
-  if (c.financingType === undefined) return "financingType";
   if (c.amount === undefined) return "amount";
+  if (c.financingType === undefined) return "financingType";
   if (c.financingType === "financing") {
-    if (c.installment === undefined) return "installment";
     if (c.downPayment === undefined) return "downPayment";
-    if (c.finalPayment === undefined) return "finalPayment";
+    if (c.installment === undefined) return "installment";
     if (c.tenureMonths === undefined) return "tenure";
-  } else {
-    if (c.tenureMonths === undefined) return "tenure"; // horizon for cash
+    if (c.finalPayment === undefined) return "finalPayment";
   }
   return null;
 }
@@ -196,6 +187,7 @@ function fromIntent(seed: ExtractedIntent): Collected {
   if (seed.installment != null) c.installment = seed.installment;
   if (seed.downPayment != null) c.downPayment = seed.downPayment;
   if (seed.tenureMonths != null) c.tenureMonths = seed.tenureMonths;
+  if (seed.finalPayment != null) c.finalPayment = seed.finalPayment;
   return c;
 }
 
@@ -245,9 +237,7 @@ export function runSimulationConversation(
     if (nextMissingSlot(collected) === pending.awaiting && collected[slotKey(pending.awaiting)] === undefined) {
       return {
         type: "text",
-        content: reaskPrefix(isRtl) + (pending.awaiting === "tenure" && collected.financingType === "cash"
-          ? horizonQuestion(isRtl)
-          : questionFor(pending.awaiting, isRtl)),
+        content: reaskPrefix(isRtl) + questionFor(pending.awaiting, isRtl),
         pendingSim: pending
       };
     }
@@ -258,23 +248,24 @@ export function runSimulationConversation(
   // 2. Ask for the next missing slot, or finalize
   const missing = nextMissingSlot(collected);
   if (missing) {
-    const content =
-      missing === "tenure" && collected.financingType === "cash"
-        ? horizonQuestion(isRtl)
-        : questionFor(missing, isRtl);
+    const content = questionFor(missing, isRtl);
     return { type: "text", content, pendingSim: { awaiting: missing, collected } };
   }
 
   // 3. Complete → deterministic simulation with the ACTUAL provided values
+  // Horizon/tenure for cash: exactly 6 months
+  // Horizon/tenure for financing: tenureMonths
+  const finalTenure = collected.financingType === "cash" ? 6 : (collected.tenureMonths ?? 60);
+
   const intent: ExtractedIntent = {
     isSimulation: true,
     financingType: collected.financingType!,
     category: collected.category ?? "generic",
     amount: collected.amount ?? null,
-    tenureMonths: collected.tenureMonths ?? null,
-    downPayment: collected.downPayment ?? null,
-    installment: collected.installment ?? null,
-    finalPayment: collected.finalPayment ?? null
+    tenureMonths: finalTenure,
+    downPayment: collected.financingType === "cash" ? (collected.amount ?? null) : (collected.downPayment ?? 0),
+    installment: collected.financingType === "cash" ? 0 : (collected.installment ?? 0),
+    finalPayment: collected.financingType === "cash" ? 0 : (collected.finalPayment ?? 0)
   };
   return SimulatorManager.simulateFromParams(intent, transactions, language, balance) as ConversationResult;
 }
@@ -290,3 +281,4 @@ function slotKey(slot: SimulationSlot): keyof Collected {
 function reaskPrefix(isRtl: boolean): string {
   return isRtl ? "لم أتمكن من فهم الإجابة بوضوح. " : "I couldn't read that clearly. ";
 }
+

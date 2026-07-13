@@ -96,10 +96,11 @@ export function determineRiskLevel(
   savingsImpact: number,
   newSurplus: number
 ): RiskLevel {
-  if (dti > 0.50 || emergencyMonths < 1.5 || savingsImpact > 0.80 || newSurplus < 0) {
+  const exceedsSama = dti > 0.33;
+  if (exceedsSama || emergencyMonths < 1.0 || savingsImpact > 0.80 || newSurplus < 0) {
     return "High Risk";
   }
-  if (dti > 0.35 || emergencyMonths < 3.0 || savingsImpact > 0.40) {
+  if (dti > 0.25 || emergencyMonths < 2.0 || savingsImpact > 0.40) {
     return "Medium Risk";
   }
   return "Low Risk";
@@ -132,9 +133,9 @@ export function calculateDecisionScore(
   }
 
   // 3. Emergency Buffer Deductions (max 20 pts)
-  if (emergencyMonths < 4.0) {
-    const gap = 4.0 - emergencyMonths;
-    score -= Math.min(20, gap * 7);
+  if (emergencyMonths < 3.0) {
+    const gap = 3.0 - emergencyMonths;
+    score -= Math.min(20, gap * 10);
   }
 
   // 4. Sensitivity failure deductions (max 10 pts)
@@ -142,19 +143,25 @@ export function calculateDecisionScore(
 
   score = Math.max(0, Math.min(100, Math.round(score)));
 
+  // If total debt obligations exceed 33% SAMA limit, or if savings go negative, it is a hard red.
+  const exceedsSama = dti > 0.33;
+  const isInsufficientSavings = emergencyMonths < 0;
+  
+  if (exceedsSama || isInsufficientSavings) {
+    score = Math.min(score, 45); // SAMA rejection or insufficient funds
+  }
+
   let color: ScoreColor = "red";
   let label = "Not Recommended";
 
-  if (score >= 80) {
+  if (score >= 60 && !exceedsSama && !isInsufficientSavings) {
     color = "green";
-    label = "Excellent Decision";
-  } else if (score >= 60) {
-    color = "blue";
-    label = "Good Decision";
-  } else if (score >= 40) {
-    color = "yellow";
-    label = "Needs Review";
+    label = "Recommended";
+  } else {
+    color = "red";
+    label = "Not Recommended";
   }
 
   return { score, color, label };
 }
+

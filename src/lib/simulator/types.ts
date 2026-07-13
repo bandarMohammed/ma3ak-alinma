@@ -1,6 +1,7 @@
 export interface UserContext {
   monthlyIncome: number;
-  monthlyFixedExpenses: number;
+  monthlyFixedExpenses: number; // essential fixed bills (Rent, Utilities, Insurance)
+  monthlyTotalExpenses: number; // total monthly living outflows (fixed + variable)
   currentSavings: number;
   existingFinancingPayments: number;
 }

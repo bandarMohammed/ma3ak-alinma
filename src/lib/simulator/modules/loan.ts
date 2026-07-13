@@ -30,8 +30,8 @@ export class LoanSimulator extends BaseSimulator {
     // Core metrics calculations for Now
     const dtiNow = calculateDTI(context.monthlyIncome, context.existingFinancingPayments, installment);
     const emergencyMonthsNow = calculateEmergencyFundMonths(context.currentSavings, context.monthlyFixedExpenses, installment);
-    const savingsImpactNow = calculateSavingsReduction(installment, context.monthlyIncome, context.monthlyFixedExpenses, context.existingFinancingPayments);
-    const currentSurplus = context.monthlyIncome - context.monthlyFixedExpenses - context.existingFinancingPayments;
+    const savingsImpactNow = calculateSavingsReduction(installment, context.monthlyIncome, context.monthlyTotalExpenses, context.existingFinancingPayments);
+    const currentSurplus = context.monthlyIncome - context.monthlyTotalExpenses - context.existingFinancingPayments;
     const newSurplusNow = currentSurplus - installment;
 
     // Run sensitivity tests
@@ -91,25 +91,20 @@ export class LoanSimulator extends BaseSimulator {
       }
     ];
 
+
+
     // Compile Smart Insights
     const insights: SmartInsight[] = [];
     const savingsReductionPct = Math.round(savingsImpactNow * 100);
-    const emergencyFundMonthsRounded = Math.round(emergencyMonthsNow * 10) / 10;
 
     if (this.isRtl) {
       insights.push({ text: `هذا الالتزام المالي يلتهم ${savingsReductionPct}% من فائضك النقدي القابل للادخار.` });
-      insights.push({ text: `ستدفع إجمالي أرباح ومصاريف تمويل تبلغ ${totalProfit.toLocaleString()} ريال لمصرف الإنماء.` });
-      insights.push({ text: `رصيد الطوارئ المتاح يغطي مصاريفك لمدة ${emergencyFundMonthsRounded} أشهر بعد إدراج القسط.` });
-      
       const interestSaved = Math.max(0, totalProfit - adjustedTotalProfit);
       if (interestSaved > 0) {
         insights.push({ text: `تخفيض مبلغ التمويل بنسبة 25% يوفر عليك ${interestSaved.toLocaleString()} ريال من الأرباح.` });
       }
     } else {
       insights.push({ text: `This loan obligation consumes ${savingsReductionPct}% of your monthly saving capacity.` });
-      insights.push({ text: `You will pay SAR ${totalProfit.toLocaleString()} in financing costs (bank profits) over the tenure.` });
-      insights.push({ text: `Your current emergency fund will cover only ${emergencyFundMonthsRounded} months of total commitments.` });
-      
       const interestSaved = Math.max(0, totalProfit - adjustedTotalProfit);
       if (interestSaved > 0) {
         insights.push({ text: `Reducing the borrow amount by 25% saves you ${interestSaved.toLocaleString()} SAR in financing fees.` });
@@ -118,24 +113,15 @@ export class LoanSimulator extends BaseSimulator {
 
     // "Why?" Diagnostic bullet points
     const reasons: string[] = [];
+    const dtiPercent = Math.round(dtiNow * 100);
     if (dtiNow <= 0.33) {
       reasons.push(this.isRtl 
-        ? "عبء المديونية الإجمالي يقل عن 33% وهو ضمن النطاق الصحي والتنظيمي." 
-        : "Total debt obligations stand below 33%, within healthy regulatory guidelines.");
+        ? `نسبة الالتزام الشهري (${dtiPercent}%) متوافقة مع ضوابط البنك المركزي السعودي (ساما) - أقل من 33% من الدخل.` 
+        : `Total debt obligations (${dtiPercent}%) stand below SAMA's 33% regulatory threshold.`);
     } else {
       reasons.push(this.isRtl 
-        ? `عبء المديونية (DTI) مرتفع ويبلغ ${Math.round(dtiNow * 100)}% من الدخل الإجمالي.` 
-        : `Debt burden ratio (DTI) is elevated at ${Math.round(dtiNow * 100)}% of your gross income.`);
-    }
-
-    if (emergencyMonthsNow >= 4.0) {
-      reasons.push(this.isRtl 
-        ? `رصيد الطوارئ المتاح يغطي مصاريفك لأكثر من 4 أشهر (${emergencyFundMonthsRounded} أشهر).` 
-        : `Emergency fund covers more than 4 months of commitments (${emergencyFundMonthsRounded} months).`);
-    } else {
-      reasons.push(this.isRtl 
-        ? `رصيد الطوارئ ضعيف ولا يغطي مصاريفك سوى لمدة ${emergencyFundMonthsRounded} أشهر.` 
-        : `Emergency fund is thin, covering only ${emergencyFundMonthsRounded} months of commitments.`);
+        ? `نسبة الالتزام الشهري مرتفعة وتصل إلى ${dtiPercent}% من الدخل، مما يتجاوز حد ساما الموصى به (33%).` 
+        : `Debt burden ratio (DTI) is elevated at ${dtiPercent}%, exceeding SAMA's regulatory limit of 33%.`);
     }
 
     if (savingsImpactNow <= 0.30) {
@@ -160,10 +146,10 @@ export class LoanSimulator extends BaseSimulator {
 
     // Warnings
     const warnings: string[] = [];
-    if (dtiNow > 0.45) {
+    if (dtiNow > 0.33) {
       warnings.push(this.isRtl 
-        ? "تنبيه: عبء المديونية الشهري مرتفع جداً ويقترب من الحدود القصوى المسموح بها نظاماً." 
-        : "Warning: Your Debt-to-Income (DTI) ratio is highly elevated, close to regulatory limits.");
+        ? "مرفوض نظاماً من البنك المركزي السعودي (ساما) لتجاوز عبء الدين الشهري نسبة 33% من دخلك." 
+        : "Rejected by SAMA regulations: Total monthly debt obligations exceed the 33% threshold.");
     }
     if (newSurplusNow < 0) {
       warnings.push(this.isRtl 
@@ -192,46 +178,25 @@ export class LoanSimulator extends BaseSimulator {
           ? (this.isRtl ? "عجز مالي" : "Cash Flow Deficit") 
           : (this.isRtl ? "مستقر" : "Stable Buffer"),
         isCritical: sensitivityResults.expenseShock.failed
-      },
-      {
-        metric: this.isRtl ? "مصروف طارئ بقيمة 5,000 ريال" : "5,000 SAR Emergency Expense",
-        value: this.isRtl 
-          ? `يغطي ${Math.round(sensitivityResults.emergencyShock.months * 10) / 10} أشهر` 
-          : `Covers ${Math.round(sensitivityResults.emergencyShock.months * 10) / 10} months`,
-        impactText: sensitivityResults.emergencyShock.failed 
-          ? (this.isRtl ? "رصيد طوارئ حرج" : "Critical Buffer") 
-          : (this.isRtl ? "مقبول" : "Acceptable"),
-        isCritical: sensitivityResults.emergencyShock.failed
       }
     ];
 
-    // Metric rows for comparison
-    const tableData: MetricRow[] = [
-      {
-        metric: this.isRtl ? "مبلغ التمويل المقترح" : "Proposed Loan Amount",
-        scenarioNow: `${amount.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
-        scenarioAdjusted: `${adjustedAmount.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
-        scenarioWait: `0 ${this.isRtl ? "ريال (تأجيل)" : "SAR (Delayed)"}`
-      },
-      {
-        metric: this.isRtl ? "القسط الشهري" : "Monthly Installment",
-        scenarioNow: `${installment.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
-        scenarioAdjusted: `${adjustedInstallment.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
-        scenarioWait: `0 ${this.isRtl ? "ريال" : "SAR"}`
-      },
-      {
-        metric: this.isRtl ? "أشهر تغطية الطوارئ" : "Emergency Coverage (Months)",
-        scenarioNow: `${emergencyFundMonthsRounded}`,
-        scenarioAdjusted: `${(Math.round(calculateEmergencyFundMonths(context.currentSavings, context.monthlyFixedExpenses, adjustedInstallment) * 10) / 10)}`,
-        scenarioWait: `${(Math.round(calculateEmergencyFundMonths(context.currentSavings + (6 * currentSurplus), context.monthlyFixedExpenses, installment) * 10) / 10)}`
-      },
-      {
-        metric: this.isRtl ? "تكلفة المديونية (الأرباح)" : "Financing Cost (Profit)",
-        scenarioNow: `${totalProfit.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
-        scenarioAdjusted: `${adjustedTotalProfit.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
-        scenarioWait: `0 ${this.isRtl ? "ريال" : "SAR"}`
-      }
-    ];
+    // Metric rows for comparison (Loan amount, monthly installment only)
+    const tableData: MetricRow[] = [];
+
+    tableData.push({
+      metric: this.isRtl ? "مبلغ القرض المقترح" : "Proposed Loan Amount",
+      scenarioNow: `${amount.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
+      scenarioAdjusted: `${adjustedAmount.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
+      scenarioWait: `0 ${this.isRtl ? "ريال (تأجيل)" : "SAR (Delayed)"}`
+    });
+
+    tableData.push({
+      metric: this.isRtl ? "القسط الشهري" : "Monthly Installment",
+      scenarioNow: `${installment.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
+      scenarioAdjusted: `${adjustedInstallment.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
+      scenarioWait: `0 ${this.isRtl ? "ريال" : "SAR"}`
+    });
 
     // Timeline Balance projection
     const timeline = this.generateTimeline(
@@ -259,7 +224,9 @@ export class LoanSimulator extends BaseSimulator {
       score: {
         score,
         color,
-        label,
+        label: this.isRtl 
+          ? (color === "green" ? "موصى به" : "غير موصى به") 
+          : label,
         reasons
       },
       riskLevel,

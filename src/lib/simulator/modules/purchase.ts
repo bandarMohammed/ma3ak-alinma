@@ -96,11 +96,11 @@ export class PurchaseSimulator extends BaseSimulator {
 
     // 1. Core metrics calculations for Proceed Today (Now)
     const dtiNow = calculateDTI(context.monthlyIncome, context.existingFinancingPayments, installment);
-    // Deduct upfront cost from savings immediately if cash purchase
-    const savingsNow = isCash ? Math.max(0, context.currentSavings - price) : context.currentSavings;
+    // Deduct upfront cost from savings immediately if cash purchase (allow negative to indicate deficit)
+    const savingsNow = isCash ? context.currentSavings - price : context.currentSavings;
     const emergencyMonthsNow = calculateEmergencyFundMonths(savingsNow, context.monthlyFixedExpenses, installment);
-    const savingsImpactNow = isCash ? 0 : calculateSavingsReduction(installment, context.monthlyIncome, context.monthlyFixedExpenses, context.existingFinancingPayments);
-    const currentSurplus = context.monthlyIncome - context.monthlyFixedExpenses - context.existingFinancingPayments;
+    const savingsImpactNow = isCash ? 0 : calculateSavingsReduction(installment, context.monthlyIncome, context.monthlyTotalExpenses, context.existingFinancingPayments);
+    const currentSurplus = context.monthlyIncome - context.monthlyTotalExpenses - context.existingFinancingPayments;
     const newSurplusNow = currentSurplus - installment;
 
     // Run sensitivity tests
@@ -152,7 +152,7 @@ export class PurchaseSimulator extends BaseSimulator {
           ? `يسمح بمراكمة وفورات إضافية بقيمة ${(currentSurplus * 6).toLocaleString()} ريال قبل الالتزام بالقسط.`
           : `Allows building additional savings of ${(currentSurplus * 6).toLocaleString()} SAR prior to starting installments.`);
 
-    const projectionMonths = params.projectionMonths || params.tenure || this.config.projectionMonths;
+    const projectionMonths = isCash ? 6 : tenure;
     // A final/balloon payment lands at the end of the term, reducing every end balance.
     const endBalanceNow = context.currentSavings - downPaymentNow + (projectionMonths * (currentSurplus - installment)) - finalPayment;
     const endBalanceAdjusted = context.currentSavings - downPaymentAdjusted + (projectionMonths * (currentSurplus - adjustedInstallment)) - finalPayment;
@@ -184,37 +184,24 @@ export class PurchaseSimulator extends BaseSimulator {
     // 3. Compile Programmatic Smart Insights
     const insights: SmartInsight[] = [];
     const savingsReductionPct = Math.round(savingsImpactNow * 100);
-    const emergencyFundMonthsRounded = Math.round(emergencyMonthsNow * 10) / 10;
 
     if (isCash) {
       if (this.isRtl) {
         insights.push({ text: `هذا الشراء يستقطع ${price.toLocaleString()} ريال مباشرة من رصيد مدخراتك الجارية.` });
-        insights.push({ text: `رصيد الطوارئ المتبقي سيكفي لتغطية مصاريفك لمدة ${emergencyFundMonthsRounded} أشهر بعد الشراء.` });
         insights.push({ text: `اختيار بديل اقتصادي يوفر لك ${(price - downPaymentAdjusted).toLocaleString()} ريال فوراً في حسابك.` });
       } else {
         insights.push({ text: `This purchase immediately deducts ${price.toLocaleString()} SAR from your savings.` });
-        insights.push({ text: `Your emergency fund will cover only ${emergencyFundMonthsRounded} months of total expenses after this purchase.` });
         insights.push({ text: `Opting for a cheaper alternative saves you ${(price - downPaymentAdjusted).toLocaleString()} SAR today.` });
       }
     } else {
       if (this.isRtl) {
         insights.push({ text: `هذا الشراء يُقلّل من وفرك المالي الشهري المتاح للادخار بنسبة ${savingsReductionPct}%.` });
-        if (financingCostNow > 0) {
-          insights.push({ text: `ستتحمل تكاليف تمويل إضافية (أرباح/فوائد) تراكمية تبلغ ${financingCostNow.toLocaleString()} ريال.` });
-        }
-        insights.push({ text: `رصيد الطوارئ الحالي سيكفي لتغطية مصاريفك لمدة ${emergencyFundMonthsRounded} أشهر فقط بعد دفع القسط.` });
-        
         const interestSaved = Math.max(0, financingCostNow - financingCostAdjusted);
         if (interestSaved > 0) {
           insights.push({ text: `زيادة الدفعة الأولى إلى 25% تُوفّر عليك ${interestSaved.toLocaleString()} ريال من تكلفة التمويل.` });
         }
       } else {
         insights.push({ text: `This purchase reduces your monthly savings capacity by ${savingsReductionPct}%.` });
-        if (financingCostNow > 0) {
-          insights.push({ text: `You will pay a total of ${financingCostNow.toLocaleString()} SAR in financing costs over the term.` });
-        }
-        insights.push({ text: `Your emergency fund will cover only ${emergencyFundMonthsRounded} months of total commitments.` });
-        
         const interestSaved = Math.max(0, financingCostNow - financingCostAdjusted);
         if (interestSaved > 0) {
           insights.push({ text: `Increasing the down payment to 25% saves you ${interestSaved.toLocaleString()} SAR in financing costs.` });
@@ -225,33 +212,26 @@ export class PurchaseSimulator extends BaseSimulator {
     // 4. "Why?" diagnostic points
     const reasons: string[] = [];
     if (isCash) {
-      reasons.push(this.isRtl 
-        ? "الشراء النقدي يوفر عليك تكاليف الفوائد والتمويل الإضافية تماماً." 
-        : "Paying in cash completely avoids any interest charges or financing costs.");
-    } else {
-      if (dtiNow <= 0.33) {
-        reasons.push(this.isRtl 
-          ? "نسبة الالتزام الشهري آمنة وتقل عن 33% من إجمالي دخلك." 
-          : "Monthly debt obligation ratio is safe and under 33% of your income.");
+      if (price > context.currentSavings) {
+        reasons.push(this.isRtl
+          ? `رصيد مدخراتك الحالي (${context.currentSavings.toLocaleString()} ريال) غير كافٍ لتغطية التكلفة الإجمالية للشراء نقداً.`
+          : `Your savings buffer (${context.currentSavings.toLocaleString()} SAR) is insufficient to cover the total cash cost.`);
       } else {
         reasons.push(this.isRtl 
-          ? `نسبة الالتزام الشهري مرتفعة وتصل إلى ${Math.round(dtiNow * 100)}% مما يتجاوز الحدود الصحية (33.33%).` 
-          : `Monthly debt obligation ratio is elevated at ${Math.round(dtiNow * 100)}%, exceeding healthy bounds (33.33%).`);
+          ? "الشراء النقدي يوفر عليك تكاليف الفوائد والتمويل الإضافية تماماً." 
+          : "Paying in cash completely avoids any interest charges or financing costs.");
       }
-    }
-
-    if (emergencyMonthsNow >= 4.0) {
-      reasons.push(this.isRtl 
-        ? `رصيد الطوارئ كافٍ ويغطي مصاريفك لمدة ${emergencyFundMonthsRounded} أشهر.` 
-        : `Emergency reserves are healthy, covering ${emergencyFundMonthsRounded} months of expenses.`);
-    } else if (emergencyMonthsNow >= 2.0) {
-      reasons.push(this.isRtl 
-        ? `رصيد الطوارئ ضعيف نسبياً ويغطي مصاريفك لمدة ${emergencyFundMonthsRounded} أشهر فقط.` 
-        : `Emergency reserves are thin, covering only ${emergencyFundMonthsRounded} months of expenses.`);
     } else {
-      reasons.push(this.isRtl 
-        ? `رصيد الطوارئ حرج جداً ولا يغطي سوى ${emergencyFundMonthsRounded} أشهر من التزاماتك.` 
-        : `Emergency reserves are critical, covering only ${emergencyFundMonthsRounded} months.`);
+      const dtiPercent = Math.round(dtiNow * 100);
+      if (dtiNow <= 0.33) {
+        reasons.push(this.isRtl 
+          ? `نسبة الالتزامات الشهرية (${dtiPercent}%) متوافقة مع ضوابط البنك المركزي السعودي (ساما) - أقل من 33% من الدخل.` 
+          : `Monthly debt obligations (${dtiPercent}%) are fully SAMA compliant — below 33% of income.`);
+      } else {
+        reasons.push(this.isRtl 
+          ? `نسبة الالتزامات الشهرية مرتفعة وتصل إلى ${dtiPercent}% من الدخل، مما يتجاوز حد ساما الموصى به (33%).` 
+          : `Monthly debt obligations are elevated at ${dtiPercent}%, exceeding SAMA's regulatory limit of 33%.`);
+      }
     }
 
     if (!isCash) {
@@ -278,15 +258,15 @@ export class PurchaseSimulator extends BaseSimulator {
 
     // 5. Warnings
     const warnings: string[] = [];
-    if (dtiNow > 0.45) {
-      warnings.push(this.isRtl 
-        ? "تنبيه: نسبة عبء الدين (DTI) تتجاوز النسبة التنظيمية الموصى بها في مصرف الإنماء." 
-        : "Warning: Debt-to-Income (DTI) exceeds Alinma Bank's regulatory guidance limits.");
+    if (isCash && price > context.currentSavings) {
+      warnings.push(this.isRtl
+        ? `رصيدك الجاري لا يغطي قيمة الشراء كاش (تحتاج إلى ${(price - context.currentSavings).toLocaleString()} ريال إضافية لإتمام العملية).`
+        : `Your current balance is insufficient for this cash purchase (you need an additional ${(price - context.currentSavings).toLocaleString()} SAR to proceed).`);
     }
-    if (emergencyMonthsNow < 2.0) {
+    if (dtiNow > 0.33 && !isCash) {
       warnings.push(this.isRtl 
-        ? "تحذير: رصيد الطوارئ المتبقي منخفض جداً وقد يضعك في منطقة العجز المالي في حال حدوث طوارئ مفاجئة." 
-        : "Caution: Leftover emergency fund is highly depleted. Any unexpected expense may trigger a deficit.");
+        ? "مرفوض نظاماً من البنك المركزي السعودي (ساما) لتجاوز عبء الدين الشهري نسبة 33% من دخلك." 
+        : "Rejected by SAMA regulations: Total monthly debt obligations exceed the 33% threshold.");
     }
     if (newSurplusNow < 0) {
       warnings.push(this.isRtl 
@@ -294,7 +274,7 @@ export class PurchaseSimulator extends BaseSimulator {
         : "Critical: The proposed installment exceeds your monthly surplus, causing an immediate cash flow deficit.");
     }
 
-    // 6. Sensitivity grid
+    // 6. Sensitivity grid (Stress Tests)
     const sensitivity: SensitivityMetric[] = [
       {
         metric: this.isRtl ? "انخفاض الدخل بنسبة 15%" : "15% Income Decrease",
@@ -315,49 +295,49 @@ export class PurchaseSimulator extends BaseSimulator {
           ? (this.isRtl ? "عجز مالي" : "Cash Flow Deficit") 
           : (this.isRtl ? "مستقر" : "Stable Buffer"),
         isCritical: sensitivityResults.expenseShock.failed
-      },
-      {
-        metric: this.isRtl ? "مصروف طارئ بقيمة 5,000 ريال" : "5,000 SAR Emergency Expense",
-        value: this.isRtl 
-          ? `يغطي ${Math.round(sensitivityResults.emergencyShock.months * 10) / 10} أشهر` 
-          : `Covers ${Math.round(sensitivityResults.emergencyShock.months * 10) / 10} months`,
-        impactText: sensitivityResults.emergencyShock.failed 
-          ? (this.isRtl ? "رصيد طوارئ حرج" : "Critical Buffer") 
-          : (this.isRtl ? "مقبول" : "Acceptable"),
-        isCritical: sensitivityResults.emergencyShock.failed
       }
     ];
 
-    // 7. Metric rows for comparison table
-    const tableData: MetricRow[] = [
-      {
-        metric: isCash
-          ? (this.isRtl ? "تكلفة الشراء النقدي" : "Cash Purchase Cost")
-          : (this.isRtl ? "الدفعة الأولى المطلوبة" : "Required Down Payment"),
+    // 7. Metric rows for comparison table (Only includes dynamic rows: Price, Down Payment, Installment, Final Payment)
+    const tableData: MetricRow[] = [];
+
+    tableData.push({
+      metric: this.isRtl ? "سعر السلعة الإجمالي" : "Total Price / Cost",
+      scenarioNow: `${price.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
+      scenarioAdjusted: isCash
+        ? `${Math.round(price * 0.75).toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`
+        : `${price.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
+      scenarioWait: `${price.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`
+    });
+
+    if (downPaymentNow > 0 || !isCash) {
+      tableData.push({
+        metric: this.isRtl ? "الدفعة الأولى" : "Down Payment",
         scenarioNow: `${downPaymentNow.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
-        scenarioAdjusted: `${downPaymentAdjusted.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
+        scenarioAdjusted: isCash
+          ? `${Math.round(price * 0.75).toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`
+          : `${downPaymentAdjusted.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
         scenarioWait: `${downPaymentNow.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`
-      },
-      {
+      });
+    }
+
+    if (installment > 0 || !isCash) {
+      tableData.push({
         metric: this.isRtl ? "القسط الشهري" : "Monthly Installment",
         scenarioNow: `${installment.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
         scenarioAdjusted: `${adjustedInstallment.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
         scenarioWait: `${installment.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`
-      },
-      {
-        metric: this.isRtl ? "أشهر تغطية الطوارئ" : "Emergency Coverage (Months)",
-        scenarioNow: `${emergencyFundMonthsRounded}`,
-        scenarioAdjusted: `${(Math.round(calculateEmergencyFundMonths(Math.max(0, context.currentSavings - downPaymentAdjusted), context.monthlyFixedExpenses, adjustedInstallment) * 10) / 10)}`,
-        scenarioWait: `${(Math.round(calculateEmergencyFundMonths(Math.max(0, context.currentSavings + (6 * currentSurplus) - downPaymentNow), context.monthlyFixedExpenses, installment) * 10) / 10)}`
-      },
-      {
-        metric: this.isRtl ? "تكلفة التمويل الإضافية" : "Financing Cost",
-        scenarioNow: `${financingCostNow.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
-        scenarioAdjusted: `${financingCostAdjusted.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
-        scenarioWait: `${financingCostNow.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}${this.isRtl ? " (تأجيل)" : " (Delayed)"}`
-      }
-    ];
+      });
+    }
 
+    if (finalPayment > 0) {
+      tableData.push({
+        metric: this.isRtl ? "الدفعة الأخيرة" : "Final Payment",
+        scenarioNow: `${finalPayment.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
+        scenarioAdjusted: `${finalPayment.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
+        scenarioWait: `${finalPayment.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`
+      });
+    }
     // Timeline Points
     const timeline = this.generateTimeline(
       context,
@@ -389,7 +369,9 @@ export class PurchaseSimulator extends BaseSimulator {
       score: {
         score,
         color,
-        label,
+        label: this.isRtl 
+          ? (color === "green" ? "موصى به" : "غير موصى به") 
+          : label,
         reasons
       },
       riskLevel,

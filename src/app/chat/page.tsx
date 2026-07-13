@@ -871,12 +871,19 @@ export default function ChatPage() {
                                           <Gauge className="w-4 h-4 text-brand-purple" />
                                         </div>
                                         <ul className="space-y-2 text-[9.5px] font-bold text-brand-navy/75">
-                                          {scoreObj.reasons.map((reason: string, idx: number) => (
-                                            <li key={idx} className="flex items-start justify-end gap-2">
-                                              <span className="text-right flex-grow">{reason}</span>
-                                              <CheckCircle2 className="w-3.5 h-3.5 text-brand-success flex-shrink-0 mt-0.5" />
-                                            </li>
-                                          ))}
+                                          {scoreObj.reasons.map((reason: string, idx: number) => {
+                                            const isWarning = reason.includes("يتجاوز") || reason.includes("مرتفعة") || reason.includes("غير كافٍ") || reason.includes("عجز") || reason.includes("مخاطر") || reason.includes("فشل") || reason.toLowerCase().includes("exceed") || reason.toLowerCase().includes("elevated") || reason.toLowerCase().includes("insufficient") || reason.toLowerCase().includes("deficit") || reason.toLowerCase().includes("failed");
+                                            return (
+                                              <li key={idx} className="flex items-start justify-end gap-2">
+                                                <span className="text-right flex-grow">{reason}</span>
+                                                {isWarning ? (
+                                                  <AlertTriangle className="w-3.5 h-3.5 text-[#C0392B] flex-shrink-0 mt-0.5" />
+                                                ) : (
+                                                  <CheckCircle2 className="w-3.5 h-3.5 text-[#2E7D4F] flex-shrink-0 mt-0.5" />
+                                                )}
+                                              </li>
+                                            );
+                                          })}
                                         </ul>
                                       </div>
                                     )}

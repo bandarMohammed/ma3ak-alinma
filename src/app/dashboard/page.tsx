@@ -58,23 +58,36 @@ export default function DashboardPage() {
   const account = accounts[0];
   const recentTxs = transactions.slice(0, 5);
 
-  // Spend comparison calculation for Recharts (Current Month vs Last Month)
-  // Seed data has high food Delivery spike in current month (May) vs last month (April)
+  // Spend comparison calculation for Recharts (Current Month vs Last Month) dynamically calculated
+  const latestDateStr = transactions.length > 0 ? deriveToday(transactions) : new Date().toISOString().split("T")[0];
+  const currentMonthPrefix = latestDateStr.substring(0, 7); // e.g. "2026-05"
+  
+  const [year, month] = currentMonthPrefix.split("-").map(Number);
+  const lastMonthVal = month === 1 ? 12 : month - 1;
+  const lastYearVal = month === 1 ? year - 1 : year;
+  const lastMonthPrefix = `${lastYearVal}-${String(lastMonthVal).padStart(2, "0")}`; // e.g. "2026-04"
+
   const currentMonthSpent = transactions
-    .filter(t => t.type === "debit" && t.transaction_date.includes("2026-05"))
+    .filter(t => t.type === "debit" && t.transaction_date.startsWith(currentMonthPrefix))
     .reduce((sum, t) => sum + t.amount, 0);
 
   const lastMonthSpent = transactions
-    .filter(t => t.type === "debit" && t.transaction_date.includes("2026-04"))
+    .filter(t => t.type === "debit" && t.transaction_date.startsWith(lastMonthPrefix))
     .reduce((sum, t) => sum + t.amount, 0);
+
+  const monthNamesAr = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+  const monthNamesEn = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  
+  const currentMonthLabel = isRtl ? monthNamesAr[month - 1] : monthNamesEn[month - 1];
+  const lastMonthLabel = isRtl ? monthNamesAr[lastMonthVal - 1] : monthNamesEn[lastMonthVal - 1];
 
   const chartData = [
     {
-      name: isRtl ? "أبريل / April" : "April",
+      name: lastMonthLabel,
       [isRtl ? "المصروفات" : "Spent"]: Math.round(lastMonthSpent),
     },
     {
-      name: isRtl ? "مايو / May" : "May",
+      name: currentMonthLabel,
       [isRtl ? "المصروفات" : "Spent"]: Math.round(currentMonthSpent),
     }
   ];

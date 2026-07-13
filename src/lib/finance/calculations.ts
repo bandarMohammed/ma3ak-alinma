@@ -133,13 +133,25 @@ export function typicalMonthlySaving(txs: Transaction[]): number {
 /** Corrected UserContext: real balance as savings, detected financing, month-span averages. */
 export function buildFinancialProfile(txs: Transaction[], balance?: number): UserContext {
   const monthlyIncome = avgMonthlyIncome(txs) || 15000;
-  const monthlyFixedExpenses = avgMonthlyOutflow(txs) || 0;
+  
+  // Calculate essential fixed obligations (Rent, Utilities, Insurance)
+  // excluding variable lifestyle costs like restaurants, coffee, Careem, or shopping
+  const monthlyFixedExpenses = monthlyAverage(
+    txs,
+    t => t.type === "debit" && (
+      t.category === "Bills & Utilities" ||
+      t.category === "Insurance" ||
+      t.merchant === "Emaar Real Estate"
+    ) && !isFinancingTx(t)
+  ) || 4000;
+
+  const monthlyTotalExpenses = avgMonthlyOutflow(txs) || 0;
   const existingFinancingPayments = detectFinancingPayments(txs);
   const currentSavings = typeof balance === "number" && isFinite(balance) && balance > 0
     ? round2(balance)
     : FALLBACK_BALANCE;
 
-  return { monthlyIncome, monthlyFixedExpenses, currentSavings, existingFinancingPayments };
+  return { monthlyIncome, monthlyFixedExpenses, monthlyTotalExpenses, currentSavings, existingFinancingPayments };
 }
 
 // ----------------------------------------------------------------------------
@@ -217,7 +229,10 @@ export function computeReport(
     .slice(0, 3);
 
   const hungerstationTotal = filteredTxs
-    .filter(t => t.merchant === "Hungerstation" || t.merchant === "Jahez")
+    .filter(t => {
+      const m = t.merchant.toLowerCase();
+      return m.includes("hungerstation") || m.includes("jahez");
+    })
     .reduce((sum, t) => sum + t.amount, 0);
 
   const insights: string[] = [];
@@ -228,7 +243,7 @@ export function computeReport(
     }
     const shoppingCat = topCategories.find(c => c.category === "Shopping");
     if (shoppingCat && shoppingCat.amount > 500) {
-      insights.push(`تُظهر المؤشرات أن فئة التسوق شكّلت النسبة الأعلى من الإنفاق بوقع ${shoppingCat.percentage}%، وبناءً على البيانات المتاحة يُنصح بتأجيل المشتريات الكمالية.`);
+      insights.push(`تُظهر المؤشرات أن فئة التسوق شكّلت جزءاً كبيراً من الإنفاق بواقع ${shoppingCat.percentage}%، وبناءً على البيانات المتاحة يُنصح بتأجيل المشتريات الكمالية.`);
     }
     if (insights.length < 3) {
       insights.push(`وفقاً لبياناتك، يُقدّر صافي الوفر المالي للفترة الحالية بقيمة ${(totalIncome - totalSpent).toLocaleString()} ريال سعودي، وهو ما يدعم خطتك الادخارية المستهدفة.`);
@@ -240,7 +255,7 @@ export function computeReport(
     }
     const shoppingCat = topCategories.find(c => c.category === "Shopping");
     if (shoppingCat && shoppingCat.amount > 500) {
-      insights.push(`According to the available data, shopping constitutes a primary spending category at ${shoppingCat.percentage}%, suggesting a deferral of non-essential purchases.`);
+      insights.push(`According to the available data, shopping constitutes a significant portion of your spending at ${shoppingCat.percentage}%, suggesting a deferral of non-essential purchases.`);
     }
     if (insights.length < 3) {
       insights.push(`Your net cash surplus for the current period is projected at ${(totalIncome - totalSpent).toLocaleString()} SAR, supporting your predefined savings target.`);
@@ -399,14 +414,11 @@ export function computeCommitments(
       const sum = group.reduce((acc, t) => acc + t.amount, 0);
       const avgAmount = Math.round(sum / group.length);
       
-      // Calculate typical due date day
-      const days = group.map(t => parseInt(t.transaction_date.slice(8, 10)));
-      const avgDay = Math.round(days.reduce((acc, d) => acc + d, 0) / days.length);
-      
-      // Category from the latest transaction
+      // Category and due date day from the latest transaction
       const sortedGroup = [...group].sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
       const latestTx = sortedGroup[0];
       const category = latestTx.category;
+      const avgDay = parseInt(latestTx.transaction_date.slice(8, 10), 10);
       
       // Select Emoji based on merchant name or category
       let emoji = "📋";
