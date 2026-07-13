@@ -171,7 +171,10 @@ export interface ReportResult {
 function periodLabel(daysRange: number, isArabic: boolean): string {
   if (daysRange <= 7) return isArabic ? "الأسبوع الماضي" : "Last 7 Days";
   if (daysRange <= 15) return isArabic ? "الـ 15 يوماً الماضية" : "Last 15 Days";
-  return isArabic ? "الشهر الماضي" : "Last Month";
+  if (daysRange <= 45) return isArabic ? "الشهر الماضي" : "Last Month";
+  if (daysRange <= 100) return isArabic ? "الـ 3 أشهر الماضية" : "Last 3 Months";
+  if (daysRange <= 200) return isArabic ? "الـ 6 أشهر الماضية" : "Last 6 Months";
+  return isArabic ? "السنة الماضية" : "Last Year";
 }
 
 /** Deterministic spending report over the last daysRange or custom date range. */
@@ -445,18 +448,8 @@ export function computeCommitments(
     }
   });
 
-  // Fallback if no recurring transactions detected
-  let defaults = detectedDefaults;
-  if (defaults.length === 0) {
-    defaults = [
-      { merchant: "Emaar Real Estate", category: "Bills & Utilities", emoji: "🏠", expectedAmount: 2500, dueDate: 1, duration: "ongoing", startMonth: "2025-01" },
-      { merchant: "Mobily Home Internet", category: "Bills & Utilities", emoji: "📶", expectedAmount: 299, dueDate: 5, duration: "ongoing", startMonth: "2025-01" },
-      { merchant: "Tawuniya Insurance", category: "Bills & Utilities", emoji: "🛡️", expectedAmount: 350, dueDate: 10, duration: "ongoing", startMonth: "2025-01" },
-      { merchant: "Netflix", category: "Entertainment", emoji: "🎬", expectedAmount: 56, duration: "ongoing", startMonth: "2025-01", dueDate: 15 },
-      { merchant: "Alinma Auto Finance", category: "Bills & Utilities", emoji: "🚗", expectedAmount: 1200, dueDate: 27, duration: "ongoing", startMonth: "2025-01" },
-      { merchant: "stc pay", category: "Bills & Utilities", emoji: "📱", expectedAmount: 287.5, dueDate: 28, duration: "ongoing", startMonth: "2025-01" }
-    ];
-  }
+  // Clean defaults definition from detected recurring groups
+  const defaults = detectedDefaults;
 
   // Filter out any default commitments that are deleted
   const activeDefaults = defaults.filter(d => 
@@ -575,7 +568,9 @@ export interface FinancialSummary {
 export function buildFinancialSummary(
   txs: Transaction[],
   balance: number,
-  language: "ar" | "en"
+  language: "ar" | "en",
+  customCommitments: any[] = [],
+  deletedCommitments: string[] = []
 ): FinancialSummary {
   const isArabic = language === "ar";
   const today = deriveToday(txs);
@@ -652,7 +647,10 @@ export function buildFinancialSummary(
     .filter(t => t.merchant.toLowerCase().includes("starbucks") || t.merchant.toLowerCase().includes("arabica") || t.merchant.toLowerCase().includes("barns") || t.description.toLowerCase().includes("قهوة") || t.description.toLowerCase().includes("coffee"))
     .reduce((s, t) => s + t.amount, 0);
   const foodDeliverySpend = currentMonthDebits
-    .filter(t => t.merchant === "Hungerstation" || t.merchant === "Jahez")
+    .filter(t => {
+      const m = t.merchant.toLowerCase();
+      return m.includes("hungerstation") || m.includes("jahez");
+    })
     .reduce((s, t) => s + t.amount, 0);
   const grocerySpend = currentMonthDebits
     .filter(t => t.description.toLowerCase().includes("مقاضي") || t.description.toLowerCase().includes("groceries"))
@@ -661,17 +659,9 @@ export function buildFinancialSummary(
     .filter(t => t.description.toLowerCase().includes("وقود") || t.description.toLowerCase().includes("fuel") || t.merchant.toLowerCase().includes("petrol"))
     .reduce((s, t) => s + t.amount, 0);
 
-  // --- Fixed commitments detection ---
-  const fixedMerchants = ["Emaar Real Estate", "stc pay", "Mobily Home Internet", "Netflix", "Tawuniya Insurance", "Alinma Auto Finance", "Saudi Electricity Co.", "National Water Company"];
-  const commitments = fixedMerchants.map(m => {
-    const merchantTxs = txs.filter(t => t.merchant === m && t.type === "debit");
-    if (merchantTxs.length < 3) return null;
-    const avg = Math.round(merchantTxs.reduce((s, t) => s + t.amount, 0) / merchantTxs.length);
-    const days = merchantTxs.map(t => parseInt(t.transaction_date.slice(8, 10)));
-    const avgDay = Math.round(days.reduce((s, d) => s + d, 0) / days.length);
-    const paidThisMonth = currentMonthDebits.filter(t => t.merchant === m).reduce((s, t) => s + t.amount, 0);
-    return { merchant: m, expectedAmount: avg, dueDay: avgDay, paidThisMonth: round2(paidThisMonth) };
-  }).filter(Boolean);
+  // --- Dynamic commitments detection (including manual additions & excluding deleted ones) ---
+  const commitmentsResult = computeCommitments(txs, language, customCommitments, deletedCommitments);
+  const commitments = commitmentsResult.commitments_list;
 
   // --- Biggest single transaction this month ---
   const biggestThisMonth = currentMonthDebits.length > 0
@@ -735,10 +725,10 @@ export function buildFinancialSummary(
     lines.push(`⛽ الوقود: ${fmt(fuelSpend)} ريال`);
 
     lines.push(``);
-    lines.push(`--- الالتزامات الثابتة الشهرية ---`);
+    lines.push(`--- الالتزامات الشهرية (المكتشفة والمضافة يدوياً) ---`);
     commitments.forEach((c: any) => {
-      const status = c.paidThisMonth >= c.expectedAmount ? "✅ مسدد" : "⏳ لم يُسدد بعد";
-      lines.push(`• ${c.merchant}: ${fmt(c.expectedAmount)} ريال (يوم ${c.dueDay}) — ${status}`);
+      const status = c.status === "Completed" ? "✅ مسدد بالكامل" : `⏳ لم يُسدد بعد (المتبقي: ${fmt(c.remainingAmount)} ريال)`;
+      lines.push(`• ${c.merchant} (${c.category}): ${fmt(c.expectedAmount)} ريال (يوم استحقاقه: ${c.dueDate} من كل شهر) — ${status}`);
     });
 
     lines.push(``);
@@ -797,10 +787,10 @@ export function buildFinancialSummary(
     lines.push(`⛽ Fuel: ${fmt(fuelSpend)} SAR`);
 
     lines.push(``);
-    lines.push(`--- Fixed Monthly Commitments ---`);
+    lines.push(`--- Monthly Fixed Commitments (Detected & Manually Added) ---`);
     commitments.forEach((c: any) => {
-      const status = c.paidThisMonth >= c.expectedAmount ? "✅ Paid" : "⏳ Not yet paid";
-      lines.push(`• ${c.merchant}: ${fmt(c.expectedAmount)} SAR (day ${c.dueDay}) — ${status}`);
+      const status = c.status === "Completed" ? "✅ Paid in full" : `⏳ Outstanding (Remaining: ${fmt(c.remainingAmount)} SAR)`;
+      lines.push(`• ${c.merchant} (${c.category}): ${fmt(c.expectedAmount)} SAR (due on day ${c.dueDate} of the month) — ${status}`);
     });
 
     lines.push(``);

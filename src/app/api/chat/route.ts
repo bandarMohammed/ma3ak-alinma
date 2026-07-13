@@ -96,7 +96,13 @@ export async function POST(req: Request) {
         );
       }
       let daysRange = 30;
-      if (queryLower.includes("week") || queryLower.includes("أسبوع") || queryLower.includes("7")) {
+      if (queryLower.includes("year") || queryLower.includes("سنة") || queryLower.includes("عام") || queryLower.includes("365")) {
+        daysRange = 365;
+      } else if (queryLower.includes("6 month") || queryLower.includes("٦ أشهر") || queryLower.includes("٦ اشهر") || queryLower.includes("180")) {
+        daysRange = 180;
+      } else if (queryLower.includes("3 month") || queryLower.includes("٣ أشهر") || queryLower.includes("٣ اشهر") || queryLower.includes("90")) {
+        daysRange = 90;
+      } else if (queryLower.includes("week") || queryLower.includes("أسبوع") || queryLower.includes("7")) {
         daysRange = 7;
       } else if (queryLower.includes("15") || queryLower.includes("١٥")) {
         daysRange = 15;
@@ -134,8 +140,14 @@ export async function POST(req: Request) {
       hasSimulationKeyword ||
       messages.some(m => m.metadata?.pendingSim || m.metadata?.simulationData);
 
-    // Build financial summary
-    const financialContext = buildFinancialSummary(transactions, balance || 0, language);
+    // Build financial summary passing custom commitments and deleted commitments
+    const financialContext = buildFinancialSummary(
+      transactions,
+      balance || 0,
+      language,
+      customCommitments,
+      deletedCommitments
+    );
 
     const fmt = (n: number) => Math.round(n).toLocaleString();
     const disclaimer = isArabic
@@ -232,11 +244,25 @@ Return ONLY valid JSON: {"type":"text","content":"..."} or {"type":"simulation_t
 
 CRITICAL ROLE:
 - You are an EMBEDDED BANKING ASSISTANT with DIRECT READ ACCESS to this client's account.
-- You already retrieved and analyzed the client's full financial data (in the system data load message).
+- You already retrieved and analyzed the client's full financial data (in the system data load message), including their monthly commitments.
 - You MUST use those numbers to answer. NEVER say "I cannot access your account".
 - Reply in ${isArabic ? "Arabic (formal Gulf Arabic)" : "English"}.
 - Use markdown (**bold**, bullet points) for clarity.
 - Be concise, warm, and professional.
+
+CONVERSATIONAL COMMITMENTS COMMANDS (CRITICAL):
+- If the user asks to ADD a commitment (e.g., "أضف التزام حليب أطفال بـ 200 ريال يوم 10"), you MUST return a JSON containing the structured commitment fields so the system can save it:
+  {"type": "text", "content": "لقد قمت بإضافة التزامك المالي (حليب أطفال) بقيمة 200 ريال بنجاح! 💸", "addCommitment": {"merchant": "حليب أطفال", "expectedAmount": 200, "dueDate": 10, "category": "Bills & Utilities", "emoji": "🍼", "duration": "ongoing", "startMonth": "2026-05"}}
+  Make sure you parse the merchant name, expectedAmount (number), dueDate (number, default 15 if not specified), category (default "Bills & Utilities"), and pick a matching emoji (e.g. 🍼, 🏠, 📶, 🚗).
+- If the user asks to DELETE a commitment (e.g., "احذف التزام stc pay" or "شيل التزام المدارس"), you MUST return:
+  {"type": "text", "content": "تم حذف التزام stc pay بنجاح من قائمتك. 🧹", "deleteCommitment": "stc pay"}
+  Parse the exact merchant name to delete (e.g. "stc pay").
+- If the user asks if they have a commitment with a certain name (e.g. "هل عندي التزام stc؟" or "عندي التزام نتفلكس؟"):
+  - First, check if it exists in the active commitments list in the system database query message.
+  - Answer with "نعم" or "لا". (e.g. "نعم، لديك التزام stc pay بقيمة 287 ريال مستحق يوم 28.").
+  - If the user then says "اعرضه لي" (display it to me) or asks to see it, you MUST return a commitments payload containing ONLY that matched commitment:
+    {"type": "commitments", "total_commitments": 287.5, "total_paid": 0, "paid_percentage": 0, "commitments_list": [{"merchant": "stc pay", "category": "Bills & Utilities", "emoji": "📱", "expectedAmount": 287.5, "dueDate": 28, "paidAmount": 0, "remainingAmount": 287.5, "remainingPercentage": 100, "status": "In Progress", "duration": "ongoing"}]}
+    Ensure you return the complete commitments structure with only that one item in the list!
 
 FORBIDDEN RESPONSES:
 - "I cannot access your account"
@@ -249,7 +275,7 @@ End every reply with:
 ${isArabic
   ? "يُرجى العلم بأن هذا التحليل يستند إلى البيانات المتاحة وهو لأغراض استشارية. للحصول على قرار تمويلي رسمي، يُرجى التواصل مع أحد مستشاري مصرف الإنماء."
   : "Please note that this analysis is based on available data and is for advisory purposes only. For an official financing decision, please contact an Alinma Bank advisor."}
-Return ONLY valid JSON: {"type":"text","content":"..."} with no markdown wrappers.`;
+Return ONLY valid JSON: {"type":"text","content":"..."} (plus addCommitment/deleteCommitment if requested) or {"type":"commitments",...} with no markdown wrappers.`;
     }
 
     // Inject financial context as prior assistant Turn
@@ -300,12 +326,19 @@ Return ONLY valid JSON: {"type":"text","content":"..."} with no markdown wrapper
       return NextResponse.json(simResult);
     }
 
+    // Handle commitments payload directly from OpenAI (filtered card display)
+    if (parsed?.type === "commitments") {
+      return NextResponse.json(parsed);
+    }
+
     // Handle normal text message (conversation/questions)
     return NextResponse.json(
       parsed?.type === "text" && typeof parsed.content === "string"
         ? {
             type: "text",
             content: parsed.content,
+            addCommitment: parsed.addCommitment ?? undefined,
+            deleteCommitment: parsed.deleteCommitment ?? undefined,
             // Attach pendingSim metadata to keep the conversation in simulation mode on next turns
             pendingSim: isSimulationActive ? { awaiting: "any", collected: {} } : undefined
           }

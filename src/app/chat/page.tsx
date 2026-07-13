@@ -271,6 +271,37 @@ export default function ChatPage() {
 
       const data = await response.json();
       
+      // Conversational commands logic for custom commitments adding/deleting
+      if (data.addCommitment) {
+        const currentCustom = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("ma3ak_custom_commitments") || "[]") : [];
+        const filteredCustom = currentCustom.filter((c: any) => c.merchant.toLowerCase() !== data.addCommitment.merchant.toLowerCase());
+        filteredCustom.push(data.addCommitment);
+        localStorage.setItem("ma3ak_custom_commitments", JSON.stringify(filteredCustom));
+        
+        // Remove from deleted if it was previously deleted
+        const currentDeleted = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("ma3ak_deleted_commitments") || "[]") : [];
+        const filteredDeleted = currentDeleted.filter((d: string) => d.toLowerCase() !== data.addCommitment.merchant.toLowerCase());
+        localStorage.setItem("ma3ak_deleted_commitments", JSON.stringify(filteredDeleted));
+        
+        refreshCommitmentsLocalData();
+      }
+
+      if (data.deleteCommitment) {
+        // Delete from custom
+        const currentCustom = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("ma3ak_custom_commitments") || "[]") : [];
+        const filteredCustom = currentCustom.filter((c: any) => c.merchant.toLowerCase() !== data.deleteCommitment.toLowerCase());
+        localStorage.setItem("ma3ak_custom_commitments", JSON.stringify(filteredCustom));
+
+        // Add to deleted
+        const currentDeleted = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("ma3ak_deleted_commitments") || "[]") : [];
+        if (!currentDeleted.some((d: string) => d.toLowerCase() === data.deleteCommitment.toLowerCase())) {
+          currentDeleted.push(data.deleteCommitment);
+          localStorage.setItem("ma3ak_deleted_commitments", JSON.stringify(currentDeleted));
+        }
+
+        refreshCommitmentsLocalData();
+      }
+
       // 3. Assemble ChatMessage object with structured metadata
       const aiMsg = {
         conversation_id: activeConversationId,
@@ -280,7 +311,7 @@ export default function ChatPage() {
           : data.type === "simulation"
             ? (isRtl ? "إليك تحليل المحاكاة المالية لقرارك:" : "Here is the financial simulation for your decision:")
             : data.type === "commitments"
-              ? (isRtl ? "إليك قائمة التزاماتك المالية المستحقة والمدفوعة لهذا الشهر:" : "Here is the list of your paid and unpaid financial commitments for this month:")
+              ? (isRtl ? "إليك الالتزام المالي المطلوب:" : "Here is the requested financial commitment details:")
               : (isRtl ? "إليك التقرير الذي طلبته:" : "Here is the report you requested:"),
         metadata: {
           type: data.type,
