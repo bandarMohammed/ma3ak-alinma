@@ -45,7 +45,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 export function deriveToday(txs: Transaction[]): string {
   if (!txs.length) return new Date().toISOString().split("T")[0];
 
-  const dates = [...new Set(txs.map(t => t.transaction_date))].sort();
+  const dates = Array.from(new Set(txs.map(t => t.transaction_date))).sort();
   if (dates.length <= 2) return dates[dates.length - 1];
 
   // 95th percentile date (ignores top 5% outliers)
@@ -480,7 +480,7 @@ export function computeCommitments(
             emoji: c.emoji || "📋",
             expectedAmount: c.expectedAmount || 0,
             dueDate: c.dueDate || 15,
-            duration: durationVal,
+            duration: String(durationVal),
             startMonth: startMonthStr
           };
           if (defaultIdx !== -1) {

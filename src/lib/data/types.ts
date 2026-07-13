@@ -48,7 +48,7 @@ export interface ChatMessage {
   content: string;
   created_at: string;
   metadata?: {
-    type?: 'report' | 'simulation' | 'text';
+    type?: 'report' | 'simulation' | 'text' | 'commitments';
     reportData?: {
       period: string;
       totalSpent: number;
@@ -100,6 +100,28 @@ export interface ChatMessage {
       }>;
       warnings?: string[];
       summary?: string;
+    };
+    // Commitments response payload — mirrors CommitmentItem from calculations.ts
+    commitmentsData?: {
+      type: 'commitments';
+      total_commitments: number;
+      total_paid: number;
+      paid_percentage: number;
+      commitments_list: Array<{
+        id: string;
+        merchant: string;
+        emoji: string;
+        category: string;
+        expectedAmount: number;
+        paidAmount: number;
+        remainingAmount: number;
+        remainingPercentage: number;
+        dueDate: number;
+        status: string;
+        date?: string;
+        duration?: string | number;
+        startMonth?: string;
+      }>;
     };
     // In-progress conversational simulation state (advisor slot-filling). Round-trips
     // back to /api/chat so the stateless route can resume asking for missing inputs.
