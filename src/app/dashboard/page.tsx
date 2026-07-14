@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { getCategoryIcon } from "../../lib/utils";
 import { deriveToday } from "../../lib/finance/calculations";
+import { RiyalSymbol } from "../../components/RiyalSymbol";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -180,7 +181,8 @@ export default function DashboardPage() {
                 </span>
                 <button 
                   onClick={() => setMaskBalance(!maskBalance)}
-                  className="text-white/60 hover:text-white transition-colors"
+                  aria-label={maskBalance ? (isRtl ? "إظهار الرصيد" : "Show balance") : (isRtl ? "إخفاء الرصيد" : "Hide balance")}
+                  className="p-1.5 rounded-lg text-white/60 hover:text-white transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-white flex items-center justify-center"
                 >
                   {maskBalance ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                 </button>
@@ -188,9 +190,9 @@ export default function DashboardPage() {
 
               <h3 className="text-3xl font-black tracking-tight mb-4">
                 {maskBalance ? (
-                  "•••••• " + t("sar")
+                  <>•••••• {isRtl ? <RiyalSymbol size="1.2em" /> : "SAR"}</>
                 ) : (
-                  `${account.balance.toLocaleString()} ${t("sar")}`
+                  <>{account.balance.toLocaleString()} {isRtl ? <RiyalSymbol size="1.2em" /> : "SAR"}</>
                 )}
               </h3>
 
@@ -212,7 +214,8 @@ export default function DashboardPage() {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => router.push("/chat")}
-                  className="flex flex-col items-center bg-white p-3 rounded-2xl shadow-sm border border-brand-navy/5"
+                  aria-label={t("actionChat")}
+                  className="flex flex-col items-center bg-white p-3 rounded-2xl shadow-sm border border-brand-navy/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-purple focus-visible:ring-offset-1 transition-all duration-200"
                 >
                   <div className="w-10 h-10 bg-brand-purple/10 flex items-center justify-center rounded-xl text-brand-purple mb-2">
                     <Bot className="w-5 h-5 animate-pulse" />
@@ -227,7 +230,8 @@ export default function DashboardPage() {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setActiveModal("transfer")}
-                  className="flex flex-col items-center bg-white p-3 rounded-2xl shadow-sm border border-brand-navy/5"
+                  aria-label={t("actionTransfer")}
+                  className="flex flex-col items-center bg-white p-3 rounded-2xl shadow-sm border border-brand-navy/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-navy focus-visible:ring-offset-1 transition-all duration-200"
                 >
                   <div className="w-10 h-10 bg-brand-navy/5 flex items-center justify-center rounded-xl text-brand-navy mb-2">
                     <Send className="w-5 h-5" />
@@ -242,7 +246,8 @@ export default function DashboardPage() {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setActiveModal("bills")}
-                  className="flex flex-col items-center bg-white p-3 rounded-2xl shadow-sm border border-brand-navy/5"
+                  aria-label={t("actionBills")}
+                  className="flex flex-col items-center bg-white p-3 rounded-2xl shadow-sm border border-brand-navy/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-navy focus-visible:ring-offset-1 transition-all duration-200"
                 >
                   <div className="w-10 h-10 bg-brand-navy/5 flex items-center justify-center rounded-xl text-brand-navy mb-2">
                     <Receipt className="w-5 h-5" />
@@ -257,7 +262,8 @@ export default function DashboardPage() {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setActiveModal("cards")}
-                  className="flex flex-col items-center bg-white p-3 rounded-2xl shadow-sm border border-brand-navy/5"
+                  aria-label={t("actionCards")}
+                  className="flex flex-col items-center bg-white p-3 rounded-2xl shadow-sm border border-brand-navy/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-navy focus-visible:ring-offset-1 transition-all duration-200"
                 >
                   <div className="w-10 h-10 bg-brand-navy/5 flex items-center justify-center rounded-xl text-brand-navy mb-2">
                     <CreditCard className="w-5 h-5" />
@@ -362,7 +368,7 @@ export default function DashboardPage() {
                       </div>
                       
                       <span className={`text-xs font-black ${isCredit ? "text-brand-success" : "text-brand-navy"}`}>
-                        {isCredit ? "+" : "-"} {tx.amount.toLocaleString()} {t("sar")}
+                        {isCredit ? "+" : "-"} {tx.amount.toLocaleString()} {isRtl ? <RiyalSymbol size="1.05em" /> : "SAR"}
                       </span>
                     </div>
                   );
@@ -408,7 +414,8 @@ export default function DashboardPage() {
                     setActiveModal(null);
                     setTransferSuccess(false);
                   }}
-                  className="p-1.5 rounded-full bg-brand-cream/50 text-brand-navy/60 hover:bg-brand-cream hover:text-brand-navy transition-colors focus:outline-none"
+                  aria-label={isRtl ? "إغلاق" : "Close"}
+                  className="p-2 rounded-full bg-brand-cream/50 text-brand-navy/60 hover:bg-brand-cream hover:text-brand-navy transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-purple flex items-center justify-center"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -444,7 +451,7 @@ export default function DashboardPage() {
                           value={transferRecipient}
                           onChange={(e) => setTransferRecipient(e.target.value)}
                           placeholder={isRtl ? "خالد العتيبي" : "Khaled Al-Otaibi"}
-                          className="w-full px-4 py-3 rounded-2xl bg-brand-cream/40 border border-brand-navy/10 text-brand-navy text-sm font-semibold focus:outline-none focus:border-brand-purple transition-all"
+                          className="w-full px-4 py-3 rounded-2xl bg-brand-cream/40 border border-brand-navy/10 text-brand-navy text-sm font-semibold focus:outline-none focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/20 transition-all duration-200"
                         />
                       </div>
 
@@ -456,7 +463,7 @@ export default function DashboardPage() {
                         <select
                           value={transferBank}
                           onChange={(e) => setTransferBank(e.target.value)}
-                          className="w-full px-4 py-3 rounded-2xl bg-brand-cream/40 border border-brand-navy/10 text-brand-navy text-sm font-semibold focus:outline-none focus:border-brand-purple transition-all"
+                          className="w-full px-4 py-3 rounded-2xl bg-brand-cream/40 border border-brand-navy/10 text-brand-navy text-sm font-semibold focus:outline-none focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/20 transition-all duration-200"
                         >
                           <option value="Alinma">{isRtl ? "مصرف الإنماء" : "Alinma Bank"}</option>
                           <option value="Al Rajhi">{isRtl ? "مصرف الراجحي" : "Al Rajhi Bank"}</option>
@@ -479,14 +486,20 @@ export default function DashboardPage() {
                             value={transferAmount}
                             onChange={(e) => setTransferAmount(e.target.value)}
                             placeholder="0.00"
-                            className={`w-full ${isRtl ? "pl-14 pr-4" : "pr-14 pl-4"} py-3 rounded-2xl bg-brand-cream/40 border border-brand-navy/10 text-brand-navy text-sm font-bold focus:outline-none focus:border-brand-purple transition-all`}
+                            className={`w-full ${isRtl ? "pl-14 pr-4" : "pr-14 pl-4"} py-3 rounded-2xl bg-brand-cream/40 border border-brand-navy/10 text-brand-navy text-sm font-bold focus:outline-none focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/20 transition-all duration-200`}
                           />
                           <span className={`absolute inset-y-0 ${isRtl ? "left-4" : "right-4"} flex items-center text-xs font-black text-brand-navy/40`}>
-                            {t("sar")}
+                            {isRtl ? <RiyalSymbol size="1.1em" /> : "SAR"}
                           </span>
                         </div>
                         <span className="text-[9px] font-bold text-brand-navy/40 block px-1">
-                          {isRtl ? `الرصيد المتاح: ${account.balance.toLocaleString()} ريال` : `Available balance: ${account.balance.toLocaleString()} SAR`}
+                          {isRtl ? (
+                            <span className="inline-flex items-center gap-1">
+                              الرصيد المتاح: {account.balance.toLocaleString()} <RiyalSymbol size="1em" />
+                            </span>
+                          ) : (
+                            `Available balance: ${account.balance.toLocaleString()} SAR`
+                          )}
                         </span>
                       </div>
 
@@ -495,7 +508,7 @@ export default function DashboardPage() {
                         whileHover={{ scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         type="submit"
-                        className="w-full py-3.5 rounded-2xl bg-brand-navy text-white text-sm font-extrabold shadow-md hover:bg-brand-navy/95 transition-all mt-4 flex items-center justify-center gap-2"
+                        className="w-full py-3.5 rounded-2xl bg-brand-navy text-white text-sm font-extrabold shadow-md hover:bg-brand-navy/95 transition-all duration-200 mt-4 flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-navy focus-visible:ring-offset-2"
                       >
                         <Send className="w-4 h-4" />
                         <span>{isRtl ? "إرسال الحوالة فوراً" : "Send Transfer Instantly"}</span>
@@ -524,7 +537,7 @@ export default function DashboardPage() {
                           <h4 className="text-xs font-black text-brand-navy">{bill.merchant}</h4>
                           <span className="text-[10px] font-bold text-brand-navy/50">{bill.desc}</span>
                           <span className="text-[11px] font-extrabold text-brand-navy block mt-1">
-                            {bill.amount.toLocaleString()} {t("sar")}
+                            {bill.amount.toLocaleString()} {isRtl ? <RiyalSymbol size="1.05em" /> : "SAR"}
                           </span>
                         </div>
 
@@ -532,7 +545,8 @@ export default function DashboardPage() {
                           whileTap={{ scale: 0.95 }}
                           disabled={isPaid}
                           onClick={() => handlePayBill(bill.id, bill.merchant, bill.amount)}
-                          className={`px-4 py-2 rounded-xl text-[10px] font-black shadow-sm transition-all ${
+                          aria-label={isPaid ? (isRtl ? "الفاتورة مدفوعة" : "Bill paid") : (isRtl ? "سداد الفاتورة الآن" : "Pay bill now")}
+                          className={`px-4 py-2 rounded-xl text-[10px] font-black shadow-sm transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-navy focus-visible:ring-offset-1 ${
                             isPaid 
                               ? "bg-brand-success/15 text-brand-success" 
                               : "bg-brand-navy text-white hover:bg-brand-navy/90"
@@ -597,7 +611,7 @@ export default function DashboardPage() {
                   <div className="w-full space-y-1">
                     <div className="flex justify-between text-[10px] font-bold text-brand-navy/60">
                       <span>{isRtl ? "حد السحب اليومي" : "Daily Withdrawal Limit"}</span>
-                      <span>5,000 / 10,000 {t("sar")}</span>
+                      <span>5,000 / 10,000 {isRtl ? <RiyalSymbol size="1.05em" /> : "SAR"}</span>
                     </div>
                     <div className="w-full h-2 bg-brand-cream rounded-full overflow-hidden">
                       <div className="w-1/2 h-full bg-brand-purple rounded-full"></div>
@@ -605,10 +619,10 @@ export default function DashboardPage() {
                   </div>
 
                   <div className="w-full grid grid-cols-2 gap-3 mt-2">
-                    <button className="py-2.5 rounded-xl border border-brand-navy/10 text-brand-navy text-[10px] font-extrabold hover:bg-brand-cream/30 transition-all">
+                    <button className="py-2.5 rounded-xl border border-brand-navy/10 text-brand-navy text-[10px] font-extrabold hover:bg-brand-cream/30 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-navy focus-visible:ring-offset-1">
                       {isRtl ? "تجميد المؤقت" : "Temporary Freeze"}
                     </button>
-                    <button className="py-2.5 rounded-xl border border-brand-navy/10 text-brand-navy text-[10px] font-extrabold hover:bg-brand-cream/30 transition-all">
+                    <button className="py-2.5 rounded-xl border border-brand-navy/10 text-brand-navy text-[10px] font-extrabold hover:bg-brand-cream/30 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-navy focus-visible:ring-offset-1">
                       {isRtl ? "تغيير الرقم السري" : "Change PIN"}
                     </button>
                   </div>

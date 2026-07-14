@@ -28,7 +28,8 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = false }) => {
         {showBack ? (
           <button
             onClick={() => router.back()}
-            className={`p-2 rounded-xl bg-brand-cream/60 hover:bg-brand-cream text-brand-navy focus:outline-none transition-colors font-bold text-sm ${isRtl ? "rotate-0" : "rotate-0"}`}
+            aria-label={t("back")}
+            className="p-2 rounded-xl bg-brand-cream/60 hover:bg-brand-cream text-brand-navy focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-purple/70 focus-visible:ring-offset-1 transition-all duration-200 font-bold text-sm"
           >
             {isRtl ? "←" : "←"} {t("back")}
           </button>
@@ -66,7 +67,8 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = false }) => {
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={toggleLanguage}
-          className="p-2 rounded-full hover:bg-brand-cream/60 text-brand-navy transition-all focus:outline-none"
+          aria-label={language === "ar" ? "Switch language to English" : "تغيير اللغة إلى العربية"}
+          className="p-2.5 rounded-full hover:bg-brand-cream/60 text-brand-navy focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-purple/70 transition-all duration-200 flex items-center justify-center"
           title={language === "ar" ? "English" : "عربي"}
         >
           <Globe className="w-5 h-5 text-brand-purple" />
@@ -77,7 +79,8 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = false }) => {
           <motion.button
             whileTap={{ scale: 0.95 }}
             onClick={handleLogout}
-            className="p-2 rounded-full hover:bg-brand-danger/10 text-brand-navy/60 hover:text-brand-danger transition-all focus:outline-none"
+            aria-label={t("logoutButton")}
+            className="p-2.5 rounded-full hover:bg-brand-danger/10 text-brand-navy/60 hover:text-brand-danger focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-danger/70 transition-all duration-200 flex items-center justify-center"
             title={t("logoutButton")}
           >
             <LogOut className="w-4 h-4" />

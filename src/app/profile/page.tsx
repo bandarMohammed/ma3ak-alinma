@@ -117,7 +117,8 @@ export default function ProfilePage() {
                   <div className="flex gap-1.5 p-1 rounded-xl bg-brand-cream/50 border border-brand-navy/5">
                     <button
                       onClick={() => setLanguage("ar")}
-                      className={`px-3 py-1 rounded-lg text-[9px] font-black transition-all ${
+                      aria-label="تغيير لغة التطبيق إلى العربية"
+                      className={`px-3 py-1 rounded-lg text-[9px] font-black transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-navy focus-visible:ring-offset-1 ${
                         language === "ar" 
                           ? "bg-brand-navy text-white shadow-sm" 
                           : "text-brand-navy/50 hover:text-brand-navy"
@@ -127,7 +128,8 @@ export default function ProfilePage() {
                     </button>
                     <button
                       onClick={() => setLanguage("en")}
-                      className={`px-3 py-1 rounded-lg text-[9px] font-black transition-all ${
+                      aria-label="Change app language to English"
+                      className={`px-3 py-1 rounded-lg text-[9px] font-black transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-navy focus-visible:ring-offset-1 ${
                         language === "en" 
                           ? "bg-brand-navy text-white shadow-sm" 
                           : "text-brand-navy/50 hover:text-brand-navy"
@@ -157,7 +159,8 @@ export default function ProfilePage() {
                   <motion.button
                     whileTap={{ scale: 0.95 }}
                     onClick={handleResetData}
-                    className="px-3.5 py-2 rounded-xl bg-brand-orange/10 hover:bg-brand-orange/20 text-brand-orange text-[9px] font-black transition-all focus:outline-none"
+                    aria-label={isRtl ? "إعادة تعيين البيانات" : "Reset Data"}
+                    className="px-3.5 py-2 rounded-xl bg-brand-orange/10 hover:bg-brand-orange/20 text-brand-orange text-[9px] font-black transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-orange focus-visible:ring-offset-1"
                   >
                     {isRtl ? "تهيئة" : "Reset"}
                   </motion.button>
@@ -171,7 +174,8 @@ export default function ProfilePage() {
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
               onClick={handleLogout}
-              className="w-full py-4 rounded-3xl bg-white border border-brand-danger/20 hover:bg-brand-danger/5 text-brand-danger text-xs font-black shadow-sm transition-all flex items-center justify-center gap-2"
+              aria-label={t("logoutButton")}
+              className="w-full py-4 rounded-3xl bg-white border border-brand-danger/20 hover:bg-brand-danger/5 text-brand-danger text-xs font-black shadow-sm transition-all duration-200 flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-danger focus-visible:ring-offset-1"
             >
               <LogOut className="w-4 h-4" />
               <span>{t("logoutButton")}</span>

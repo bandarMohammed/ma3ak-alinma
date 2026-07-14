@@ -9,6 +9,7 @@ import {
   Home, MessageSquare, PieChart, ArrowLeftRight, Settings, 
   Globe, LogOut, User, Sparkles, Bot, ShieldAlert
 } from "lucide-react";
+import { RiyalSymbol } from "./RiyalSymbol";
 
 export const ResponsiveFrame: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const router = useRouter();
@@ -121,7 +122,8 @@ export const ResponsiveFrame: React.FC<{ children: React.ReactNode }> = ({ child
                     <button
                       key={item.id}
                       onClick={() => router.push(item.route)}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-extrabold transition-all relative ${
+                      aria-label={label}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-extrabold transition-all relative focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-purple focus-visible:ring-offset-1 ${
                         isActive 
                           ? "bg-brand-purple text-white shadow-md shadow-brand-purple/20" 
                           : "text-white/60 hover:text-white hover:bg-white/5"
@@ -170,7 +172,8 @@ export const ResponsiveFrame: React.FC<{ children: React.ReactNode }> = ({ child
 
               <button
                 onClick={handleLogout}
-                className="w-full py-2.5 rounded-xl border border-white/10 text-white/70 hover:text-white hover:bg-brand-danger/10 hover:border-brand-danger/20 text-[10px] font-black transition-all flex items-center justify-center gap-2"
+                aria-label={t("logoutButton")}
+                className="w-full py-2.5 rounded-xl border border-white/10 text-white/70 hover:text-white hover:bg-brand-danger/10 hover:border-brand-danger/20 text-[10px] font-black focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-danger focus-visible:ring-offset-1 transition-all duration-200 flex items-center justify-center gap-2"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>{t("logoutButton")}</span>
@@ -212,7 +215,7 @@ export const ResponsiveFrame: React.FC<{ children: React.ReactNode }> = ({ child
                     {isRtl ? "رصيدك المتاح" : "Your Balance"}
                   </div>
                   <span className="text-sm font-black text-brand-navy">
-                    {account.balance.toLocaleString()} {t("sar")}
+                    {account.balance.toLocaleString()} {isRtl ? <RiyalSymbol size="1.05em" /> : "SAR"}
                   </span>
                 </div>
               )}
@@ -222,7 +225,8 @@ export const ResponsiveFrame: React.FC<{ children: React.ReactNode }> = ({ child
               {/* Language Selector */}
               <button
                 onClick={toggleLanguage}
-                className="p-2 rounded-xl hover:bg-brand-cream/50 text-brand-navy transition-all focus:outline-none flex items-center gap-1.5 text-[10px] font-black"
+                aria-label={language === "ar" ? "Switch language to English" : "تغيير اللغة إلى العربية"}
+                className="p-2 rounded-xl hover:bg-brand-cream/50 text-brand-navy focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-purple/70 transition-all duration-200 flex items-center gap-1.5 text-[10px] font-black"
               >
                 <Globe className="w-4 h-4 text-brand-purple" />
                 <span>{language === "ar" ? "English" : "عربي"}</span>
@@ -233,7 +237,8 @@ export const ResponsiveFrame: React.FC<{ children: React.ReactNode }> = ({ child
               {/* Sign out */}
               <button
                 onClick={handleLogout}
-                className="p-2 rounded-xl hover:bg-brand-danger/10 text-brand-navy/50 hover:text-brand-danger transition-all focus:outline-none flex items-center gap-1 text-[10px] font-black"
+                aria-label={t("logoutButton")}
+                className="p-2 rounded-xl hover:bg-brand-danger/10 text-brand-navy/50 hover:text-brand-danger focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-danger/70 transition-all duration-200 flex items-center justify-center gap-1 text-[10px] font-black"
                 title={t("logoutButton")}
               >
                 <LogOut className="w-4 h-4" />

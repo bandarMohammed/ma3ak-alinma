@@ -10,6 +10,7 @@ import { CATEGORIES } from "../../lib/data/MockDataProvider";
 import { getCategoryIcon } from "../../lib/utils";
 import { motion } from "framer-motion";
 import { Search, Filter, ArrowUpRight, ArrowDownLeft, X } from "lucide-react";
+import { RiyalSymbol } from "../../components/RiyalSymbol";
 
 export default function TransactionsPage() {
   const router = useRouter();
@@ -73,7 +74,7 @@ export default function TransactionsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t("searchPlaceholder")}
-            className={`w-full ${isRtl ? "pr-9 pl-4" : "pl-9 pr-4"} py-2.5 rounded-2xl bg-brand-cream/40 border border-brand-navy/10 text-brand-navy text-xs font-semibold focus:outline-none focus:border-brand-purple transition-all`}
+            className={`w-full ${isRtl ? "pr-9 pl-4" : "pl-9 pr-4"} py-2.5 rounded-2xl bg-brand-cream/40 border border-brand-navy/10 text-brand-navy text-xs font-semibold focus:outline-none focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/20 transition-all duration-200`}
           />
         </div>
 
@@ -83,7 +84,8 @@ export default function TransactionsPage() {
           {/* Credit/Debit Toggle buttons */}
           <button
             onClick={() => setSelectedType(selectedType === "all" ? "credit" : selectedType === "credit" ? "debit" : "all")}
-            className={`px-3 py-1.5 rounded-xl border text-[9px] font-extrabold flex items-center gap-1 transition-all ${
+            aria-label={t("allTypes")}
+            className={`px-3 py-1.5 rounded-xl border text-[9px] font-extrabold flex items-center gap-1 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-purple focus-visible:ring-offset-1 ${
               selectedType !== "all" 
                 ? "bg-brand-purple text-white border-brand-purple shadow-sm" 
                 : "bg-brand-cream/35 text-brand-navy/60 border-brand-navy/10 hover:bg-brand-cream"
@@ -106,7 +108,8 @@ export default function TransactionsPage() {
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCategory(isSelected ? "" : cat.name_en)}
-                  className={`px-3 py-1.5 rounded-xl border text-[9px] font-extrabold whitespace-nowrap transition-all ${
+                  aria-label={catName}
+                  className={`px-3 py-1.5 rounded-xl border text-[9px] font-extrabold whitespace-nowrap transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-navy focus-visible:ring-offset-1 ${
                     isSelected 
                       ? "bg-brand-navy text-white border-brand-navy shadow-sm" 
                       : "bg-brand-cream/35 text-brand-navy/60 border-brand-navy/10 hover:bg-brand-cream"
@@ -151,7 +154,8 @@ export default function TransactionsPage() {
                         key={tx.id}
                         initial={{ opacity: 0, y: 5 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="bg-white rounded-2xl p-4 shadow-sm border border-brand-navy/5 flex items-center justify-between"
+                        whileHover={{ y: -1 }}
+                        className="bg-white rounded-2xl p-4 shadow-sm border border-brand-navy/5 flex items-center justify-between transition-all duration-200 hover:border-brand-purple/20 hover:shadow-md"
                       >
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 bg-brand-cream/50 flex items-center justify-center rounded-xl text-brand-navy/70">
@@ -170,7 +174,7 @@ export default function TransactionsPage() {
                         </div>
 
                         <span className={`text-xs font-black ${isCredit ? "text-brand-success" : "text-brand-navy"}`}>
-                          {isCredit ? "+" : "-"} {tx.amount.toLocaleString()} {t("sar")}
+                          {isCredit ? "+" : "-"} {tx.amount.toLocaleString()} {isRtl ? <RiyalSymbol size="1.05em" /> : "SAR"}
                         </span>
                       </motion.div>
                     );

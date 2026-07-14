@@ -49,6 +49,28 @@ export async function POST(req: Request) {
     const apiKey = process.env.OPENAI_API_KEY;
     const hasRealKey = !!apiKey && !apiKey.includes("dummy");
 
+    // Helper to extract dates in YYYY-MM-DD or DD-MM-YYYY format
+    const extractDates = (text: string): { startDate: string; endDate: string } | null => {
+      const ymdRegex = /(\d{4}-\d{2}-\d{2})/g;
+      let matches = [...text.matchAll(ymdRegex)].map(m => m[1]);
+
+      if (matches.length < 2) {
+        const dmyRegex = /(\d{2}-\d{2}-\d{4})/g;
+        const dmyMatches = [...text.matchAll(dmyRegex)].map(m => {
+          const parts = m[1].split("-");
+          return `${parts[2]}-${parts[1]}-${parts[0]}`; // Convert to YYYY-MM-DD
+        });
+        if (dmyMatches.length >= 2) {
+          matches = dmyMatches;
+        }
+      }
+
+      if (matches.length >= 2) {
+        return { startDate: matches[0], endDate: matches[1] };
+      }
+      return null;
+    };
+
     // ============================================================================
     // STEP 1 — Intent Detection: Report, Habits, and Commitments (Deterministic)
     // ============================================================================
@@ -59,7 +81,57 @@ export async function POST(req: Request) {
       queryLower.includes("التزامات") ||
       queryLower.includes("التزاماتي");
 
+    const isGeneralCommitmentsQuery =
+      isCommitmentsQuery &&
+      !queryLower.includes("أضف") &&
+      !queryLower.includes("اضف") &&
+      !queryLower.includes("اضافه") &&
+      !queryLower.includes("إضافة") &&
+      !queryLower.includes("احذف") &&
+      !queryLower.includes("حذف") &&
+      !queryLower.includes("شيل") &&
+      !queryLower.includes("ازالة") &&
+      !queryLower.includes("إزالة") &&
+      !queryLower.includes("هل عندي") &&
+      !queryLower.includes("هل لدي") &&
+      !queryLower.includes("عندي التزام ") && 
+      !queryLower.includes("لدي التزام ") &&
+      !queryLower.includes("اضهرلي") &&
+      !queryLower.includes("أظهر لي") &&
+      !queryLower.includes("اظهر لي") &&
+      !queryLower.includes("أبي أشوف") &&
+      !queryLower.includes("ابي اشوف") &&
+      !queryLower.includes("اعرض التزام") &&
+      !queryLower.includes("noon") &&
+      !queryLower.includes("stc") &&
+      !queryLower.includes("netflix") &&
+      !queryLower.includes("mobily") &&
+      !queryLower.includes("spotify") &&
+      !queryLower.includes("youtube") &&
+      !queryLower.includes("شاهد");
+
     const hasReportKeyword = queryLower.includes("report") || queryLower.includes("تقرير");
+
+    const isFeedbackOrQuestion =
+      queryLower.includes("خطأ") ||
+      queryLower.includes("خطا") ||
+      queryLower.includes("مشكلة") ||
+      queryLower.includes("مشكله") ||
+      queryLower.includes("عيوب") ||
+      queryLower.includes("عيب") ||
+      queryLower.includes("لاحظت") ||
+      queryLower.includes("لاحظه") ||
+      queryLower.includes("مو دقيق") ||
+      queryLower.includes("غير دقيق") ||
+      queryLower.includes("ما يحسب") ||
+      queryLower.includes("ليش") ||
+      queryLower.includes("لماذا") ||
+      queryLower.includes("كيف") ||
+      queryLower.includes("why") ||
+      queryLower.includes("error") ||
+      queryLower.includes("bug") ||
+      queryLower.includes("wrong") ||
+      queryLower.includes("not accurate");
 
     const isHabitsQuery =
       !isCommitmentsQuery &&
@@ -74,11 +146,13 @@ export async function POST(req: Request) {
 
     const isReportQuery =
       !isCommitmentsQuery &&
-      !isHabitsQuery && (
+      !isHabitsQuery &&
+      !isFeedbackOrQuestion && (
         hasReportKeyword ||
         queryLower.includes("history") ||
         queryLower.includes("week") ||
         queryLower.includes("أسبوع") ||
+        queryLower.includes("اسبوع") ||
         queryLower.includes("الشهر الماضي") ||
         queryLower.includes("last month") ||
         queryLower.includes("تاريخ معاملاتي") ||
@@ -87,24 +161,50 @@ export async function POST(req: Request) {
 
     // --- Report ---
     if (isReportQuery) {
-      const dateMatch =
-        lastUserMessage.match(/(\d{4}-\d{2}-\d{2})\s*(?:إلى|الى|to|-)\s*(\d{4}-\d{2}-\d{2})/i) ||
-        lastUserMessage.match(/(\d{4}-\d{2}-\d{2}).*?(\d{4}-\d{2}-\d{2})/);
+      const dateMatch = extractDates(lastUserMessage);
       if (dateMatch) {
         return NextResponse.json(
-          computeReport(transactions, { startDate: dateMatch[1], endDate: dateMatch[2] }, language)
+          computeReport(transactions, { startDate: dateMatch.startDate, endDate: dateMatch.endDate }, language)
         );
       }
       let daysRange = 30;
-      if (queryLower.includes("year") || queryLower.includes("سنة") || queryLower.includes("عام") || queryLower.includes("365")) {
+      if (
+        queryLower.includes("year") ||
+        queryLower.includes("سنة") ||
+        queryLower.includes("سنه") ||
+        queryLower.includes("عام") ||
+        queryLower.includes("365")
+      ) {
         daysRange = 365;
-      } else if (queryLower.includes("6 month") || queryLower.includes("٦ أشهر") || queryLower.includes("٦ اشهر") || queryLower.includes("180")) {
+      } else if (
+        queryLower.includes("6 month") ||
+        queryLower.includes("٦ أشهر") ||
+        queryLower.includes("٦ اشهر") ||
+        queryLower.includes("سته اشهر") ||
+        queryLower.includes("ستة أشهر") ||
+        queryLower.includes("180")
+      ) {
         daysRange = 180;
-      } else if (queryLower.includes("3 month") || queryLower.includes("٣ أشهر") || queryLower.includes("٣ اشهر") || queryLower.includes("90")) {
+      } else if (
+        queryLower.includes("3 month") ||
+        queryLower.includes("٣ أشهر") ||
+        queryLower.includes("٣ اشهر") ||
+        queryLower.includes("ثلاث اشهر") ||
+        queryLower.includes("ثلاثة أشهر") ||
+        queryLower.includes("90")
+      ) {
         daysRange = 90;
-      } else if (queryLower.includes("week") || queryLower.includes("أسبوع") || queryLower.includes("7")) {
+      } else if (
+        queryLower.includes("week") ||
+        queryLower.includes("أسبوع") ||
+        queryLower.includes("اسبوع") ||
+        queryLower.includes("7")
+      ) {
         daysRange = 7;
-      } else if (queryLower.includes("15") || queryLower.includes("١٥")) {
+      } else if (
+        queryLower.includes("15") ||
+        queryLower.includes("١٥")
+      ) {
         daysRange = 15;
       }
       return NextResponse.json(computeReport(transactions, daysRange, language));
@@ -116,7 +216,7 @@ export async function POST(req: Request) {
     }
 
     // --- Commitments ---
-    if (isCommitmentsQuery) {
+    if (isGeneralCommitmentsQuery) {
       return NextResponse.json(
         computeCommitments(transactions, language, customCommitments, deletedCommitments)
       );
@@ -257,12 +357,10 @@ CONVERSATIONAL COMMITMENTS COMMANDS (CRITICAL):
 - If the user asks to DELETE a commitment (e.g., "احذف التزام stc pay" or "شيل التزام المدارس"), you MUST return:
   {"type": "text", "content": "تم حذف التزام stc pay بنجاح من قائمتك. 🧹", "deleteCommitment": "stc pay"}
   Parse the exact merchant name to delete (e.g. "stc pay").
-- If the user asks if they have a commitment with a certain name (e.g. "هل عندي التزام stc؟" or "عندي التزام نتفلكس؟"):
-  - First, check if it exists in the active commitments list in the system database query message.
-  - Answer with "نعم" or "لا". (e.g. "نعم، لديك التزام stc pay بقيمة 287 ريال مستحق يوم 28.").
-  - If the user then says "اعرضه لي" (display it to me) or asks to see it, you MUST return a commitments payload containing ONLY that matched commitment:
-    {"type": "commitments", "total_commitments": 287.5, "total_paid": 0, "paid_percentage": 0, "commitments_list": [{"merchant": "stc pay", "category": "Bills & Utilities", "emoji": "📱", "expectedAmount": 287.5, "dueDate": 28, "paidAmount": 0, "remainingAmount": 287.5, "remainingPercentage": 100, "status": "In Progress", "duration": "ongoing"}]}
-    Ensure you return the complete commitments structure with only that one item in the list!
+- If the user asks if they have a specific commitment (e.g., "هل عندي التزام stc؟" or "عندي التزام نتفلكس؟"), check if it exists in the active list, then answer with "نعم" or "لا" and detail it (e.g., "نعم، لديك التزام stc pay بقيمة 287 ريال مستحق يوم 28.").
+- If the user asks to SHOW, VIEW, DISPLAY, or SEE a specific commitment (e.g., "اضهرلي التزام Noon.com" or "اعرض التزام stc pay" or "أبي أشوف التزام Netflix" or "اعرضه لي"), you MUST return a commitments JSON payload containing ONLY that matched commitment:
+  {"type": "commitments", "total_commitments": [amount], "total_paid": [paid], "paid_percentage": [pct], "commitments_list": [{"merchant": "[merchant]", "category": "[category]", "emoji": "[emoji]", "expectedAmount": [expected], "dueDate": [due_date], "paidAmount": [paid], "remainingAmount": [remaining], "remainingPercentage": [rem_pct], "status": "[status]", "duration": "[duration]", "startMonth": "[start_month]"}]}
+  Ensure you look up all details (merchant, expectedAmount, dueDate, category, emoji, paidAmount, status) from the commitments listed in the system financial context text and fill them in the list.
 
 FORBIDDEN RESPONSES:
 - "I cannot access your account"

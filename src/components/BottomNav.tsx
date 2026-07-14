@@ -36,7 +36,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => router.push(item.route)}
-                  className="w-14 h-14 bg-brand-purple flex items-center justify-center rounded-full text-white shadow-lg shadow-brand-purple/40 border-4 border-white ai-pulse-glow relative focus:outline-none"
+                  aria-label={item.label}
+                  className="w-14 h-14 bg-brand-purple flex items-center justify-center rounded-full text-white shadow-lg shadow-brand-purple/40 border-4 border-white ai-pulse-glow relative focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-purple focus-visible:ring-offset-2 transition-all duration-200"
                 >
                   <Icon className="w-6 h-6 animate-pulse" />
                 </motion.button>
@@ -51,7 +52,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab }) => {
             <button
               key={item.id}
               onClick={() => router.push(item.route)}
-              className="flex flex-col items-center justify-center w-16 py-1 text-brand-navy/60 hover:text-brand-navy focus:outline-none transition-colors relative"
+              aria-label={item.label}
+              className="flex flex-col items-center justify-center w-16 py-1 text-brand-navy/60 hover:text-brand-navy focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-navy focus-visible:ring-offset-1 rounded-xl transition-all duration-200 relative"
             >
               {isActive && (
                 <motion.div

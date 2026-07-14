@@ -177,6 +177,14 @@ function periodLabel(daysRange: number, isArabic: boolean): string {
   return isArabic ? "السنة الماضية" : "Last Year";
 }
 
+function formatDateStr(d: Date): string {
+  if (isNaN(d.getTime())) return "";
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  return `${day}-${month}-${year}`;
+}
+
 /** Deterministic spending report over the last daysRange or custom date range. */
 export function computeReport(
   txs: Transaction[],
@@ -194,15 +202,27 @@ export function computeReport(
     filteredTxs = txs.filter(t => new Date(t.transaction_date) >= startDateLimit);
     periodText = periodLabel(range, isArabic);
   } else {
-    const start = new Date(range.startDate);
-    const end = new Date(range.endDate);
+    let start = new Date(range.startDate);
+    let end = new Date(range.endDate);
+
+    // Auto-swap if dates are inverted
+    if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && start > end) {
+      const temp = start;
+      start = end;
+      end = temp;
+    }
+
     filteredTxs = txs.filter(t => {
       const d = new Date(t.transaction_date);
       return d >= start && d <= end;
     });
+
+    const startDisplay = formatDateStr(start) || range.startDate;
+    const endDisplay = formatDateStr(end) || range.endDate;
+
     periodText = isArabic
-      ? `الفترة من ${range.startDate} إلى ${range.endDate}`
-      : `Period from ${range.startDate} to ${range.endDate}`;
+      ? `الفترة من ${startDisplay} إلى ${endDisplay}`
+      : `Period from ${startDisplay} to ${endDisplay}`;
   }
 
   let totalSpent = 0;
