@@ -13,10 +13,14 @@ import { Transaction } from "./types";
 // ============================================================================
 
 /** Bump to force existing localStorage to re-seed with the new dataset. */
-export const SEED_VERSION = 4;
+export const SEED_VERSION = 7;
 
 const MONTHS = 14;
-const TODAY = new Date(2026, 4, 29); // local anchor (May 29 2026); Step-1 derives "today" from max tx date
+// Anchor to the REAL current date so the dataset always reaches "today".
+// A frozen anchor left a growing gap between the data and the real clock,
+// making any report range that extended past the frozen date look wrong
+// (e.g. missing salaries). Month 0 only generates days up to today's date.
+const TODAY = new Date();
 const TARGET_END_BALANCE = 12450.75;
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -103,12 +107,18 @@ export function generateTransactions(userId: string, accountId: string, seedKey:
     add(monthsBack, 27, 15000, "credit", "Salary", "Alinma Bank Payroll", "راتب شهري / Monthly Salary");
 
     // ---- FIXED COMMITMENTS (<5% variation) ----
-    add(monthsBack, 1, 2500, "debit", "Bills & Utilities", "Emaar Real Estate", "إيجار الشقة / Apartment Rent");
-    add(monthsBack, 28, jitter(287.5, 0.02), "debit", "Bills & Utilities", "stc pay", "فاتورة الجوال / Mobile Bill");
-    add(monthsBack, 5, jitter(299, 0.02), "debit", "Bills & Utilities", "Mobily Home Internet", "الإنترنت المنزلي / Home Internet");
+    // Categories are split into REAL obligation types (Housing / Telecom / Insurance
+    // / Financing) instead of one opaque "Bills & Utilities" blob, so the report's
+    // category breakdown, the commitments card, and advice can distinguish rent from
+    // a phone bill from a car loan. Electricity, water and SADAD remain genuine
+    // "Bills & Utilities". Each new category is registered in the engine's obligation
+    // set and in the UI category registry, so nothing renders or classifies worse.
+    add(monthsBack, 1, 2500, "debit", "Housing", "Emaar Real Estate", "إيجار الشقة / Apartment Rent");
+    add(monthsBack, 28, jitter(287.5, 0.02), "debit", "Telecom", "stc pay", "فاتورة الجوال / Mobile Bill");
+    add(monthsBack, 5, jitter(299, 0.02), "debit", "Telecom", "Mobily Home Internet", "الإنترنت المنزلي / Home Internet");
     add(monthsBack, 15, jitter(56, 0.01), "debit", "Entertainment", "Netflix", "اشتراك نتفلكس / Netflix Subscription");
-    add(monthsBack, 10, jitter(350, 0.02), "debit", "Bills & Utilities", "Tawuniya Insurance", "قسط التأمين / Insurance Premium");
-    add(monthsBack, 27, jitter(1200, 0.005), "debit", "Bills & Utilities", "Alinma Auto Finance", "قسط تمويل السيارة / Car Finance Installment");
+    add(monthsBack, 10, jitter(350, 0.02), "debit", "Insurance", "Tawuniya Insurance", "قسط التأمين / Insurance Premium");
+    add(monthsBack, 27, jitter(1200, 0.005), "debit", "Financing", "Alinma Auto Finance", "قسط تمويل السيارة / Car Finance Installment");
 
     // ---- TRENDING (clear upward direction) ----
     add(monthsBack, 5, (320 + trend * (680 - 320)) * (1 + (rng() * 2 - 1) * 0.04), "debit", "Bills & Utilities", "Saudi Electricity Co.", "فاتورة الكهرباء / Electricity Bill");
@@ -131,12 +141,42 @@ export function generateTransactions(userId: string, accountId: string, seedKey:
     for (let k = 0, n = randInt(2, 4); k < n; k++)
       add(monthsBack, randInt(1, 28), rand(120, 280), "debit", "Food & Restaurants", "Section B Restaurant", "مطعم / Dining Out");
 
+    // Salary-cycle realism: larger DISCRETIONARY buys (online shopping) happen while
+    // the account is flush — early in the month, funded by the 27th salary — NOT in
+    // the pre-salary low-liquidity window (days ~20–26). Timing only: same merchants,
+    // category, amounts and counts; just placed where the cash to afford them exists.
     for (let k = 0, n = randInt(1, 3); k < n; k++)
-      add(monthsBack, randInt(1, 28), rand(350, 1100), "debit", "Shopping", pick(shopMerchants), "تسوق إلكتروني / Online Shopping");
+      add(monthsBack, randInt(1, 18), rand(350, 1100), "debit", "Shopping", pick(shopMerchants), "تسوق إلكتروني / Online Shopping");
     if (rng() > 0.4)
       add(monthsBack, randInt(5, 25), rand(95, 300), "debit", "Entertainment", rng() > 0.5 ? "VOX Cinemas" : "Riyadh Boulevard", "ترفيه / Entertainment");
     if (i % 2 === 0)
       add(monthsBack, randInt(5, 25), rand(120, 400), "debit", "Healthcare", "Al-Dawaa Pharmacy", "صيدلية / Pharmacy");
+
+    // ---- SADAD / GOVERNMENT PAYMENT (sparse, irregular) ----
+    // Realistic Saudi behaviour: an occasional SADAD-settled traffic fine. Kept to
+    // exactly two occurrences across the history so it reads as an irregular
+    // government charge — NOT a monthly commitment (commitment detection requires
+    // 3+ active months, so this correctly stays out of the commitments list).
+    if (i === 4 || i === 10)
+      add(monthsBack, randInt(12, 20), pick([150, 300, 500]), "debit", "Bills & Utilities", "SADAD Government Payment", "سداد مخالفة مرورية / SADAD Traffic Violation");
+
+    // ---- BNPL INSTALLMENT (Tabby) — a recent buy-now-pay-later plan ----
+    // The merchant name carries "Tabby", so the shared FINANCING_PATTERN books it
+    // as a financing OBLIGATION (not discretionary shopping) and keeps it out of
+    // the discretionary-outflow average. Present only in the last 4 months (a
+    // 4-instalment plan), which is realistic and exercises BNPL detection.
+    if (i >= MONTHS - 4)
+      add(monthsBack, 18, 249.75, "debit", "Shopping", "Tabby", "قسط تابي (اشترِ الآن وادفع لاحقاً) / Tabby Installment (BNPL)");
+
+    // ---- SEASONAL SPENDING (Ramadan / Eid uplift) ----
+    // Saudi spending spikes around Ramadan & Eid (gifts, groceries, gatherings).
+    // A single extra seasonal purchase in two months adds realistic seasonality
+    // that the robust (winsorized) statistics are designed to absorb without
+    // letting one festive month masquerade as the customer's "typical" level.
+    // Festive spend is funded by payday, so it lands just after the 27th salary
+    // (early in the month) — not in the tight pre-salary days. Timing only.
+    if (i === 6 || i === 7)
+      add(monthsBack, randInt(1, 8), rand(700, 1400), "debit", "Shopping", "Eid & Ramadan Purchases", "مشتريات العيد ورمضان / Seasonal Eid & Ramadan Spend");
 
     // ---- SAVINGS SINK — regular, then STOPS in the last 2 months (broken-savings story) ----
     if (i < MONTHS - 2)
@@ -146,8 +186,26 @@ export function generateTransactions(userId: string, accountId: string, seedKey:
     // newest month: no savings transfer
   }
 
-  // One large one-off impulse purchase (excluded from monthly-average outflow in Step-1 math)
-  add(6, 15, 3800, "debit", "Shopping", "Jarir Bookstore", "مكتبة جرير - آيباد برو / iPad Pro (one-off)");
+  // One large one-off impulse purchase (excluded from monthly-average outflow in Step-1 math).
+  // Placed on day 28 — right after the 27th salary — so a 3,800 SAR buy is made when the
+  // account is at its fullest, not drawn from a thin pre-salary balance. Timing only.
+  add(6, 28, 3800, "debit", "Shopping", "Jarir Bookstore", "مكتبة جرير - آيباد برو / iPad Pro (one-off)");
+
+  // ---- REFUNDS / REVERSALS (money coming BACK — reverse spend, never add income) ----
+  // Two real-world reversals: a cancelled food-delivery order and an online-shopping
+  // return. These exercise the refund path end-to-end — the report subtracts them
+  // from their category's outflow, the forecast engine nets them out of the
+  // merchant's monthly total, and income is NOT inflated (money is conserved).
+  add(1, 12, 96.5, "credit", "Food & Restaurants", "Jahez", "استرداد قيمة طلب ملغى / Cancelled Order Refund");
+  add(2, 20, 420, "credit", "Shopping", "Noon.com", "استرجاع مبلغ مشتريات / Online Purchase Refund");
+
+  // ---- INTERNAL TRANSFER CREDIT (own money returning) — NOT income ----
+  // The savings habit broke in the last two months; here the customer pulls part
+  // of the pot back for an emergency. Money moving from the user's OWN savings pot
+  // into checking is an INTERNAL TRANSFER, so avgMonthlyIncome must exclude it —
+  // counting it as income would fabricate ~1,500 SAR of earnings that never came
+  // from outside the household (data-integrity: transfers must not inflate income).
+  add(1, 5, 1500, "credit", "Transfers", "Alinma Savings Pot", "سحب من الوعاء الادخاري / Savings Pot Withdrawal");
 
   // ---- Balance: back-compute a positive start so the ending balance is realistic ----
   list.sort((a, b) => a.transaction_date.localeCompare(b.transaction_date));

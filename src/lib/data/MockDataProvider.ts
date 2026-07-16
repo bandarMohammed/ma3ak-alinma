@@ -12,6 +12,11 @@ import {
   TransactionFilters 
 } from "./types";
 import { generateTransactions, SEED_VERSION } from "./seed";
+// Read-only: derive the savings-account balance from the same transactions that
+// already move money into/out of the pot. Not a change to any calculation — it is
+// the single source of truth for "how much is in savings", so the account model and
+// every financial feature always agree and money is conserved by construction.
+import { savingsPotBalance } from "../finance/calculations";
 
 export const CATEGORIES: Category[] = [
   { id: '1', name_ar: 'المطاعم والأغذية', name_en: 'Food & Restaurants', icon: 'Utensils', color: '#E74C3C' },
@@ -22,6 +27,13 @@ export const CATEGORIES: Category[] = [
   { id: '6', name_ar: 'الترفيه والتسلية', name_en: 'Entertainment', icon: 'Gamepad2', color: '#E67E22' },
   { id: '7', name_ar: 'الراتب', name_en: 'Salary', icon: 'Briefcase', color: '#1ABC9C' },
   { id: '8', name_ar: 'الحوالات والادخار', name_en: 'Transfers', icon: 'ArrowUpDown', color: '#95A5A6' },
+  // Finer obligation categories split out of "Bills & Utilities" for clearer
+  // reporting/commitments (Housing = rent, Telecom = mobile/internet, Insurance,
+  // Financing = loans/BNPL). Registered here so the UI renders proper labels/icons.
+  { id: '9', name_ar: 'السكن والإيجار', name_en: 'Housing', icon: 'Home', color: '#16A085' },
+  { id: '10', name_ar: 'الاتصالات', name_en: 'Telecom', icon: 'Smartphone', color: '#2980B9' },
+  { id: '11', name_ar: 'التأمين', name_en: 'Insurance', icon: 'Shield', color: '#8E44AD' },
+  { id: '12', name_ar: 'التمويل والأقساط', name_en: 'Financing', icon: 'Landmark', color: '#C0392B' },
 ];
 
 export class MockDataProvider implements DataProvider {
@@ -68,7 +80,9 @@ export class MockDataProvider implements DataProvider {
       preferred_language: "ar"
     };
     
-    // 2. Demo Account
+    // 2. Demo Accounts — a Current (checking) account and a Savings account, like a
+    // real Saudi bank customer. The Current account stays first so accounts[0] keeps
+    // meaning "checking" for every existing consumer (chat/simulator/reports).
     const demoAccount: Account = {
       id: "demo-account-id",
       user_id: "demo-user-id",
@@ -76,6 +90,14 @@ export class MockDataProvider implements DataProvider {
       balance: 12450.75,
       currency: "SAR",
       type: "حساب جاري / Current Account"
+    };
+    const demoSavingsAccount: Account = {
+      id: "demo-savings-id",
+      user_id: "demo-user-id",
+      account_number: "SA80 0500 0000 1234 5678 9013",
+      balance: 0, // set below from the reconstructed pot; kept live by getAccounts
+      currency: "SAR",
+      type: "حساب التوفير / Savings Account"
     };
 
     // 3. Financial Goals
@@ -105,11 +127,15 @@ export class MockDataProvider implements DataProvider {
       "demo"
     );
     demoAccount.balance = balance;
+    // Savings balance = the money the historical transfers already moved OUT of
+    // checking (which `balance` above is already net of). No money is created:
+    // Current + Savings = checking + pot = the customer's true total assets.
+    demoSavingsAccount.balance = savingsPotBalance(finalTransactions);
 
 
     // Save all to localStorage
     this.setStorageItem("ma3ak_user", demoUser);
-    this.setStorageItem("ma3ak_accounts", [demoAccount]);
+    this.setStorageItem("ma3ak_accounts", [demoAccount, demoSavingsAccount]);
     this.setStorageItem("ma3ak_categories", CATEGORIES);
     this.setStorageItem("ma3ak_goals", demoGoals);
     this.setStorageItem("ma3ak_transactions", finalTransactions);
@@ -175,6 +201,14 @@ export class MockDataProvider implements DataProvider {
       currency: "SAR",
       type: "حساب جاري / Current Account"
     };
+    const newSavingsAccount: Account = {
+      id: `${newAccountId}-savings`,
+      user_id: newUserId,
+      account_number: `SA80 0500 0000 ${Math.floor(1000 + Math.random() * 9000)} ${Math.floor(1000 + Math.random() * 9000)} ${Math.floor(1000 + Math.random() * 9000)}`,
+      balance: 0, // set below from the reconstructed pot; kept live by getAccounts
+      currency: "SAR",
+      type: "حساب التوفير / Savings Account"
+    };
 
     const newGoals: FinancialGoal[] = [
       {
@@ -198,6 +232,7 @@ export class MockDataProvider implements DataProvider {
     // Seed transactions for this new user (deterministic per user id)
     const { transactions: finalTransactions, balance } = generateTransactions(newUserId, newAccountId, newUserId);
     newAccount.balance = balance;
+    newSavingsAccount.balance = savingsPotBalance(finalTransactions);
 
 
     // Save records to DB lists
@@ -206,7 +241,7 @@ export class MockDataProvider implements DataProvider {
     const globalGoals = this.getStorageItem<FinancialGoal[]>("ma3ak_goals", []);
 
     this.setStorageItem("ma3ak_transactions", [...finalTransactions, ...globalTxs]);
-    this.setStorageItem("ma3ak_accounts", [newAccount, ...globalAccs]);
+    this.setStorageItem("ma3ak_accounts", [newAccount, newSavingsAccount, ...globalAccs]);
     this.setStorageItem("ma3ak_goals", [...newGoals, ...globalGoals]);
 
     // Save to registry
@@ -230,8 +265,34 @@ export class MockDataProvider implements DataProvider {
   }
 
   public async getAccounts(userId: string): Promise<Account[]> {
-    const accounts = this.getStorageItem<Account[]>("ma3ak_accounts", []);
-    return Promise.resolve(accounts.filter(a => a.user_id === userId));
+    const accounts = this.getStorageItem<Account[]>("ma3ak_accounts", []).filter(a => a.user_id === userId);
+    // Keep the Savings account balance in lock-step with the transaction ledger:
+    // it always equals the reconstructed pot (allocations in − withdrawals out).
+    // A new savings transfer reduces Current (via addTransaction) and, because the
+    // same debit increases the pot, raises Savings here — both sides move, and no
+    // money is created or lost. Reverse transfers (credit back to Current) work the
+    // same way in the opposite direction. The Current account is left untouched.
+    const txs = this.getStorageItem<Transaction[]>("ma3ak_transactions", []).filter(t => t.user_id === userId);
+    const pot = Math.round(savingsPotBalance(txs) * 100) / 100;
+    const isSavings = (a: Account) => /savings|توفير/i.test(a.type);
+    let result = accounts.map(a => (isSavings(a) ? { ...a, balance: pot } : a));
+    // Backfill a Savings account for pre-existing data that only stored a Current
+    // account, so no destructive re-seed is needed to adopt the two-account model.
+    if (accounts.length > 0 && !accounts.some(isSavings)) {
+      const current = accounts[0];
+      result = [
+        ...result,
+        {
+          id: `${current.id}-savings`,
+          user_id: userId,
+          account_number: current.account_number.slice(0, -1) + "3",
+          balance: pot,
+          currency: current.currency,
+          type: "حساب التوفير / Savings Account"
+        }
+      ];
+    }
+    return Promise.resolve(result);
   }
 
   public async updateAccountBalance(accountId: string, newBalance: number): Promise<void> {

@@ -28,93 +28,334 @@ export default function ReportsPage() {
   const handleSharePDF = async () => {
     if (!selectedReport) return;
     try {
-      const chartEl = document.getElementById("chart-container-history");
-      let chartImgData = "";
-      if (chartEl) {
-        const chartCanvas = await html2canvas(chartEl, {
-          scale: 2,
-          useCORS: true
-        });
-        chartImgData = chartCanvas.toDataURL("image/png");
+      const isRtl = language === "ar";
+      const clientName = user?.full_name || (isRtl ? "أحمد العنزي" : "Ahmed Al-Enazi");
+      const periodName = selectedReport.title.split(" - ")[1] || selectedReport.title;
+      const footerText = isRtl ? "حقوق هاكاثون أمد | معك" : "Copyright Hackathon Amad | Ma3ak";
+      
+      const formatDate = (dateStr: string) => {
+        if (!dateStr) return "";
+        try {
+          const parts = dateStr.split("-");
+          if (parts.length === 3) {
+            return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY
+          }
+        } catch (e) {}
+        return dateStr;
+      };
+
+      const startFormatted = formatDate(selectedReport.start_date);
+      const endFormatted = formatDate(selectedReport.end_date);
+
+      const catNameArMap: Record<string, string> = {
+        "Bills & Utilities": "الفواتير والخدمات",
+        "Housing": "السكن والإيجار",
+        "Telecom": "الاتصالات",
+        "Insurance": "التأمين",
+        "Financing": "التمويل والأقساط",
+        "Entertainment": "الترفيه والتسلية",
+        "Food & Restaurants": "المطاعم والأغذية",
+        "Shopping": "التسوق",
+        "Transportation": "النقل والمواصلات",
+        "Healthcare": "الصحة والعافية",
+        "Transfers": "التحويلات"
+      };
+
+      const getCategoryIconSvgPath = (category: string) => {
+        switch (category) {
+          case "Bills & Utilities":
+            return `<rect x="3" y="4" width="18" height="16" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line>`;
+          case "Housing":
+            return `<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline>`;
+          case "Telecom":
+            return `<rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line>`;
+          case "Insurance":
+            return `<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>`;
+          case "Financing":
+            return `<line x1="3" y1="22" x2="21" y2="22"></line><line x1="6" y1="18" x2="6" y2="11"></line><line x1="10" y1="18" x2="10" y2="11"></line><line x1="14" y1="18" x2="14" y2="11"></line><line x1="18" y1="18" x2="18" y2="11"></line><polygon points="12 2 20 7 4 7"></polygon>`;
+          case "Food & Restaurants":
+            return `<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>`;
+          case "Shopping":
+            return `<path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0"/>`;
+          case "Transportation":
+            return `<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2M7 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM17 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>`;
+          case "Entertainment":
+            return `<circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/>`;
+          case "Healthcare":
+            return `<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>`;
+          case "Transfers":
+            return `<path d="M17 3L21 7L17 11M21 7H9M7 21L3 17L7 13M3 17H15"/>`;
+          default:
+            return `<path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>`;
+        }
+      };
+
+      const riyalSvgPath = `
+        <path d="M 38 8 L 46 6.8 L 46 65 L 38 78 L 15 82 L 15 74 L 38 70 Z" />
+        <path d="M 54 15 L 62 13.8 L 62 68 L 54 68 Z" />
+        <path d="M 18 50 L 81 35 L 81 43 L 18 58 Z" />
+        <path d="M 62 57 L 81 53 L 81 61 L 62 65 Z" />
+        <path d="M 54 78 L 81 74 L 81 82 L 54 86 Z" />
+      `;
+      const riyalSvg = `<svg viewBox="0 0 100 100" style="width: 1em; height: 1em; display: inline-block; vertical-align: -0.15em; fill: currentColor;">${riyalSvgPath}</svg>`;
+
+      const netSavings = selectedReport.total_income - selectedReport.total_spent;
+      const savingsRate = selectedReport.total_income > 0 ? (netSavings / selectedReport.total_income) * 100 : 0;
+      
+      const start = new Date(selectedReport.start_date);
+      const end = new Date(selectedReport.end_date);
+      const diffTime = Math.abs(end.getTime() - start.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 7;
+      const avgDailySpend = selectedReport.total_spent / diffDays;
+
+      const highestCategory = selectedReport.top_categories.length > 0 ? selectedReport.top_categories[0] : null;
+      const highestCategoryNameAr = highestCategory ? (catNameArMap[highestCategory.category] || highestCategory.category) : (isRtl ? "لا يوجد" : "None");
+      const highestCategoryPct = highestCategory ? highestCategory.percentage : 0;
+
+      const COLORS = ["#7C6FD4", "#D4754B", "#1B2A4A", "#2E7D4F", "#C0392B", "#9B59B6", "#1ABC9C", "#95A5A6"];
+
+      let donutCircles = "";
+      if (selectedReport.total_spent === 0 || selectedReport.top_categories.length === 0) {
+        donutCircles = `<circle cx="50" cy="50" r="35" fill="transparent" stroke="#E2E8F0" stroke-width="12" />`;
+      } else {
+        let currentOffset = 0;
+        donutCircles = selectedReport.top_categories.map((cat, idx) => {
+          const percentage = cat.percentage;
+          const length = (percentage / 100) * 219.91;
+          const offset = currentOffset;
+          currentOffset += length;
+          const color = COLORS[idx % COLORS.length];
+          return `<circle cx="50" cy="50" r="35" fill="transparent" stroke="${color}" stroke-width="12" stroke-dasharray="${length} 219.91" stroke-dashoffset="-${offset}" transform="rotate(-90 50 50)" />`;
+        }).join("");
       }
+
+      const donutSvg = `
+        <svg viewBox="0 0 100 100" style="width: 140px; height: 140px;">
+          <circle cx="50" cy="50" r="35" fill="transparent" stroke="#F1F3F5" stroke-width="12" />
+          ${donutCircles}
+          <text x="50" y="42" text-anchor="middle" font-size="5" font-weight="bold" fill="rgba(27,42,74,0.45)" font-family="'Segoe UI', 'Tahoma', 'Arial', sans-serif">إجمالي المصروفات</text>
+          <text x="50" y="55" text-anchor="middle" font-size="9" font-weight="900" fill="#1B2A4A" font-family="Inter, sans-serif">${selectedReport.total_spent.toLocaleString()}</text>
+          <g transform="translate(46.7, 60) scale(0.08)">
+            ${riyalSvgPath.replace(/fill="[^"]*"/g, "").replace(/currentColor/g, "#7C6FD4")}
+          </g>
+        </svg>
+      `;
+
+      const categoriesListHtml = selectedReport.top_categories.map((cat, idx) => {
+        const color = COLORS[idx % COLORS.length];
+        const catNameAr = catNameArMap[cat.category] || cat.category;
+        const catIconPath = getCategoryIconSvgPath(cat.category);
+        return `
+          <div style="display: table; width: 100%; border-bottom: 1px solid rgba(27,42,74,0.03); padding-bottom: 6px; margin-bottom: 2px;">
+            <div style="display: table-cell; vertical-align: middle; width: 70%;">
+              <div style="display: inline-flex; align-items: center; gap: 8px;">
+                <div style="width: 24px; height: 24px; background-color: ${color}12; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: ${color};">
+                  <svg viewBox="0 0 24 24" style="width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.2;">
+                    ${catIconPath}
+                  </svg>
+                </div>
+                <span style="font-size: 9.5px; font-weight: bold; color: #1B2A4A; text-align: right; line-height: 1.2;">
+                  ${cat.category}
+                  <span style="display: block; font-size: 7.5px; color: rgba(27,42,74,0.45); font-family: 'Segoe UI', 'Tahoma', sans-serif; font-weight: 800; margin-top: 1px;">${catNameAr}</span>
+                </span>
+              </div>
+            </div>
+            <div style="display: table-cell; vertical-align: middle; width: 30%; text-align: left; font-size: 9px; font-weight: bold; color: #1B2A4A;">
+              <span style="font-size: 10px; font-weight: 900; display: block; line-height: 1.1;">
+                ${cat.amount.toLocaleString()} <span style="font-size: 7.5px; font-weight: 800; color: rgba(27,42,74,0.55);">ر.س</span>
+              </span>
+              <span style="font-size: 7.5px; color: ${color}; font-weight: 800;">${cat.percentage}%</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      const insightsHtml = selectedReport.insights.filter((ins: string) => !ins.includes("قرار تمويلي رسمي") && !ins.includes("financing decision")).map((insight: string) => {
+        let iconColor = "#D4754B";
+        let iconBg = "rgba(212,117,75,0.08)";
+        let iconSvg = `<svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2;"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z"/></svg>`;
+        
+        if (insight.includes("الأغذية") || insight.includes("جاهز") || insight.includes("هنجرستيشن") || insight.includes("توصيل") || insight.includes("مطاعم")) {
+          iconColor = "#D4754B";
+          iconBg = "rgba(212,117,75,0.08)";
+          iconSvg = `<svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2;"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`;
+        } else if (insight.includes("الدخل") || insight.includes("الصرف") || insight.includes("المصروفات") || insight.includes("صرف")) {
+          iconColor = "#2E7D4F";
+          iconBg = "rgba(46,125,79,0.08)";
+          iconSvg = `<svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2;"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>`;
+        } else if (insight.includes("الوفر") || insight.includes("الادخار") || insight.includes("ادخار") || insight.includes("توفير")) {
+          iconColor = "#7C6FD4";
+          iconBg = "rgba(124,111,212,0.08)";
+          iconSvg = `<svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2;"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>`;
+        }
+        
+        return `
+          <div style="background-color: #FFFFFF; border: 1px solid rgba(27,42,74,0.03); padding: 8px 12px; border-radius: 12px; margin-bottom: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.01);">
+            <div style="display: table; width: 100%;">
+              <div style="display: table-cell; width: 30px; vertical-align: top;">
+                <div style="width: 24px; height: 24px; background-color: ${iconBg}; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: ${iconColor};">
+                  ${iconSvg}
+                </div>
+              </div>
+              <div style="display: table-cell; vertical-align: middle;">
+                <p style="margin: 0; font-size: 9.5px; font-weight: bold; color: #1B2A4A; line-height: 1.5; font-family: 'Segoe UI', 'Tahoma', sans-serif;">${insight}</p>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      const spentPct = selectedReport.total_income > 0 ? Math.round((selectedReport.total_spent / selectedReport.total_income) * 100) : 0;
 
       const tempDiv = document.createElement("div");
       tempDiv.style.position = "absolute";
       tempDiv.style.left = "-9999px";
       tempDiv.style.top = "-9999px";
       tempDiv.style.width = "595px";
-      tempDiv.style.backgroundColor = "#FFFFFF";
-      tempDiv.style.color = "#1B2A4A";
-      tempDiv.style.fontFamily = "sans-serif";
-      tempDiv.style.padding = "40px";
+      tempDiv.style.backgroundColor = "#F8F9FA";
+      tempDiv.style.padding = "25px";
       tempDiv.style.boxSizing = "border-box";
-      
       tempDiv.style.direction = isRtl ? "rtl" : "ltr";
-
-      const headerTitle = isRtl ? "معك | مصرف الإنماء" : "Ma3ak | Alinma Bank";
-      const reportTitle = isRtl ? "تقرير الأداء المالي" : "Financial Performance Report";
-      const periodLabel = isRtl ? "الفترة" : "Period";
-      const incomeLabel = isRtl ? "إجمالي الدخل" : "Total Income";
-      const spentLabel = isRtl ? "إجمالي المصروفات" : "Total Expenses";
-      const chartTitle = isRtl ? "توزيع المصروفات حسب الفئات" : "Expense Distribution by Category";
-      const insightsTitleText = isRtl ? "التوصيات والتحليلات الذكية" : "Smart Recommendations & Insights";
-      const footerText = isRtl ? "Generated by Ma3ak — مصرف الإنماء" : "Generated by Ma3ak — Alinma Bank";
-      const sarText = isRtl ? `<svg viewBox="0 0 100 100" style="width: 1em; height: 1em; display: inline-block; vertical-align: -0.15em; fill: currentColor;"><path d="M 38 8 L 46 6.8 L 46 65 L 38 78 L 15 82 L 15 74 L 38 70 Z" /><path d="M 54 15 L 62 13.8 L 62 68 L 54 68 Z" /><path d="M 18 50 L 81 35 L 81 43 L 18 58 Z" /><path d="M 62 57 L 81 53 L 81 61 L 62 65 Z" /><path d="M 54 78 L 81 74 L 81 82 L 54 86 Z" /></svg>` : "SAR";
-
-      const clientName = user?.full_name || (isRtl ? "أحمد العنزي" : "Ahmed Al-Enazi");
+      tempDiv.style.fontFamily = "'Segoe UI', 'Tahoma', 'Arial', sans-serif";
 
       tempDiv.innerHTML = `
-        <div style="border: 2px solid #1B2A4A; padding: 30px; border-radius: 20px; background-color: #ffffff; box-shadow: 0 4px 20px rgba(0,0,0,0.05); font-family: 'Inter', 'Roboto', sans-serif;">
-          <!-- Header -->
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #7C6FD4; padding-bottom: 15px; margin-bottom: 20px;">
-            <span style="font-size: 22px; font-weight: 900; color: #1B2A4A;">${headerTitle}</span>
-            <span style="font-size: 14px; font-weight: bold; color: #7C6FD4;">${reportTitle}</span>
-          </div>
-
-          <!-- Client Name & Period -->
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background-color: #FDF9F3; padding: 10px 15px; border-radius: 10px; border: 1px solid rgba(212,117,75,0.2); font-size: 12px; font-weight: bold;">
-            <span style="color: #1B2A4A;">
-              ${isRtl ? "العميل" : "Client"}: <span style="color: #7C6FD4;">${clientName}</span>
-            </span>
-            <span style="color: #D4754B;">
-              ${periodLabel}: ${selectedReport.title.split(" - ")[1] || ""}
-            </span>
-          </div>
-
-          <!-- Income & Expense Grid -->
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px;">
-            <div style="background-color: #EBF7EE; border: 1px solid #D1F0D9; padding: 15px; border-radius: 15px; text-align: center;">
-              <span style="font-size: 11px; font-weight: bold; color: #2E7D4F; display: block; margin-bottom: 5px;">${incomeLabel}</span>
-              <span style="font-size: 16px; font-weight: 900; color: #2E7D4F;">+${selectedReport.total_income.toLocaleString()} ${sarText}</span>
+        <div style="border: 1px solid rgba(27,42,74,0.05); padding: 24px; border-radius: 24px; background-color: #ffffff; box-shadow: 0 8px 24px rgba(27,42,74,0.04); font-family: 'Segoe UI', 'Tahoma', 'Arial', sans-serif; position: relative;">
+          
+          <!-- Header (Alinma Premium Table Layout to protect RTL) -->
+          <div style="display: table; width: 100%; margin-bottom: 18px; border-bottom: 1px dashed rgba(27,42,74,0.1); padding-bottom: 12px; direction: ${isRtl ? "rtl" : "ltr"};">
+            <div style="display: table-cell; text-align: ${isRtl ? "right" : "left"}; vertical-align: middle;">
+              <div style="display: inline-flex; align-items: center; gap: 8px;">
+                <span style="font-size: 11px; font-weight: 900; color: #1B2A4A; text-align: left; line-height: 1.1; font-family: 'Inter', sans-serif; text-transform: uppercase; letter-spacing: 0.5px; vertical-align: middle;">
+                  alinma bank
+                  <span style="display: block; font-size: 8px; color: rgba(27, 42, 74, 0.5); font-family: 'Segoe UI', 'Tahoma', sans-serif; font-weight: bold; margin-top: 1px; text-transform: none; letter-spacing: 0;">مصرف الإنماء</span>
+                </span>
+                <div style="width: 26px; height: 26px; background-color: #1B2A4A; display: inline-flex; align-items: center; justify-content: center; border-radius: 7px; vertical-align: middle;">
+                  <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: none; stroke: #FFFFFF; stroke-width: 2.5;"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                </div>
+              </div>
             </div>
-            <div style="background-color: #FCECEB; border: 1px solid #F9D6D4; padding: 15px; border-radius: 15px; text-align: center;">
-              <span style="font-size: 11px; font-weight: bold; color: #C0392B; display: block; margin-bottom: 5px;">${spentLabel}</span>
-              <span style="font-size: 16px; font-weight: 900; color: #C0392B;">-${selectedReport.total_spent.toLocaleString()} ${sarText}</span>
+            
+            <div style="display: table-cell; text-align: ${isRtl ? "left" : "right"}; vertical-align: middle; color: #1B2A4A;">
+              <div style="direction: ${isRtl ? "rtl" : "ltr"}; display: inline-block; vertical-align: middle;">
+                <span style="font-size: 14px; font-weight: 900; font-family: 'Segoe UI', 'Tahoma', 'Arial', sans-serif; color: #1B2A4A; vertical-align: middle;">${isRtl ? "معك" : "Ma3ak"}</span>
+                <span style="display: inline-block; width: 1px; height: 12px; background-color: rgba(27,42,74,0.25); margin: 0 8px; vertical-align: middle;"></span>
+                <span style="font-size: 14px; font-weight: 900; font-family: 'Segoe UI', 'Tahoma', 'Arial', sans-serif; color: #1B2A4A; vertical-align: middle;">${isRtl ? "تقرير الأداء المالي" : "Financial Performance Report"}</span>
+                <span style="color: #D4754B; display: inline-block; vertical-align: middle; margin-${isRtl ? "right" : "left"}: 6px; line-height: 1;">
+                  <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: currentColor; display: block;"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z"/></svg>
+                </span>
+              </div>
             </div>
           </div>
 
-          <!-- Chart -->
-          ${chartImgData ? `
-          <div style="text-align: center; margin-bottom: 25px;">
-            <span style="font-size: 12px; font-weight: bold; color: #1B2A4A; display: block; text-align: ${isRtl ? "right" : "left"}; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px;">${chartTitle}</span>
-            <img src="${chartImgData}" style="width: 100%; max-width: 350px; height: auto; margin: 0 auto; display: block;" />
-          </div>
-          ` : ""}
-
-          <!-- Insights -->
-          <div style="background-color: #FDF7F5; border: 1px solid #FADED3; padding: 20px; border-radius: 15px; margin-bottom: 25px;">
-            <div style="font-size: 13px; font-weight: 900; color: #D4754B; margin-bottom: 10px; display: flex; align-items: center; gap: 5px;">
-              <span>✨ ${insightsTitleText}</span>
+          <!-- Customer & Period Info Table -->
+          <div style="display: table; width: 100%; table-layout: fixed; margin-bottom: 16px; direction: ${isRtl ? "rtl" : "ltr"};">
+            <div style="display: table-cell; width: 50%; padding-${isRtl ? "left" : "right"}: 6px; vertical-align: middle;">
+              <div style="background-color: #F8F9FA; border: 1px solid rgba(27,42,74,0.03); padding: 10px 14px; border-radius: 14px; text-align: ${isRtl ? "right" : "left"};">
+                <div style="display: inline-flex; align-items: center; gap: 10px;">
+                  <div style="width: 28px; height: 28px; background-color: rgba(124,111,212,0.08); display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; color: #7C6FD4; vertical-align: middle;">
+                    <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                  </div>
+                  <div style="display: inline-block; vertical-align: middle; margin-${isRtl ? "right" : "left"}: 8px; text-align: ${isRtl ? "right" : "left"};">
+                    <span style="font-size: 8px; font-weight: bold; color: rgba(27,42,74,0.4); display: block; line-height: 1;">الفترة: ${periodName}</span>
+                    <span style="font-size: 10.5px; font-weight: 800; color: #1B2A4A; display: block; margin-top: 3px; direction: ltr;">${startFormatted} - ${endFormatted}</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <ul style="margin: 0; padding-${isRtl ? "right" : "left"}: 20px; font-size: 11px; font-weight: bold; color: #1B2A4A; line-height: 1.8;">
-              ${selectedReport.insights.filter((ins: string) => !ins.includes("قرار تمويلي رسمي") && !ins.includes("financing decision")).map((insight: string) => `<li style="margin-bottom: 8px;">${insight}</li>`).join("")}
-            </ul>
+
+            <div style="display: table-cell; width: 50%; padding-${isRtl ? "right" : "left"}: 6px; vertical-align: middle;">
+              <div style="background-color: #F8F9FA; border: 1px solid rgba(27,42,74,0.03); padding: 10px 14px; border-radius: 14px; text-align: ${isRtl ? "right" : "left"};">
+                <div style="display: inline-flex; align-items: center; gap: 10px;">
+                  <div style="width: 28px; height: 28px; background-color: rgba(27,42,74,0.08); display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; color: #1B2A4A; vertical-align: middle;">
+                    <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                  </div>
+                  <div style="display: inline-block; vertical-align: middle; margin-${isRtl ? "right" : "left"}: 8px; text-align: ${isRtl ? "right" : "left"};">
+                    <span style="font-size: 8px; font-weight: bold; color: rgba(27,42,74,0.4); display: block; line-height: 1;">العميل</span>
+                    <span style="font-size: 10.5px; font-weight: 800; color: #1B2A4A; display: block; margin-top: 3px;">${clientName}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <!-- Footer -->
-          <div style="border-top: 1px solid #eee; padding-top: 15px; text-align: center; font-size: 10px; font-weight: bold; color: #999;">
-            ${footerText}
+          <!-- Income & Expenses Card Table -->
+          <div style="display: table; width: 100%; table-layout: fixed; margin-bottom: 16px; direction: ${isRtl ? "rtl" : "ltr"};">
+            <div style="display: table-cell; width: 50%; padding-${isRtl ? "left" : "right"}: 7px; vertical-align: middle;">
+              <div style="background-color: #EBF7EE; border: 1px solid #D1F0D9; padding: 14px 16px; border-radius: 16px; position: relative; text-align: center;">
+                <div style="position: absolute; left: 16px; top: 14px; width: 22px; height: 22px; background-color: rgba(46,125,79,0.08); display: flex; align-items: center; justify-content: center; border-radius: 6px; color: #2E7D4F;">
+                  <svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.5;"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                </div>
+                <span style="font-size: 9.5px; font-weight: bold; color: #2E7D4F; display: block; margin-bottom: 4px;">إجمالي الدخل</span>
+                <span style="font-size: 17px; font-weight: 900; color: #2E7D4F; display: inline-flex; align-items: center; gap: 4px; direction: ltr;">
+                  +${selectedReport.total_income.toLocaleString()} <span style="font-size: 11px;">${riyalSvg}</span>
+                </span>
+                <span style="font-size: 8px; font-weight: bold; color: rgba(46,125,79,0.65); display: block; margin-top: 4px;">
+                  100% من إجمالي الدخل
+                </span>
+              </div>
+            </div>
+
+            <div style="display: table-cell; width: 50%; padding-${isRtl ? "right" : "left"}: 7px; vertical-align: middle;">
+              <div style="background-color: #FCECEB; border: 1px solid #F9D6D4; padding: 14px 16px; border-radius: 16px; position: relative; text-align: center;">
+                <div style="position: absolute; left: 16px; top: 14px; width: 22px; height: 22px; background-color: rgba(192,57,43,0.08); display: flex; align-items: center; justify-content: center; border-radius: 6px; color: #C0392B;">
+                  <svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.5;"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline><polyline points="17 18 23 18 23 12"></polyline></svg>
+                </div>
+                <span style="font-size: 9.5px; font-weight: bold; color: #C0392B; display: block; margin-bottom: 4px;">إجمالي المصروفات</span>
+                <span style="font-size: 17px; font-weight: 900; color: #C0392B; display: inline-flex; align-items: center; gap: 4px; direction: ltr;">
+                  -${selectedReport.total_spent.toLocaleString()} <span style="font-size: 11px;">${riyalSvg}</span>
+                </span>
+                <span style="font-size: 8px; font-weight: bold; color: rgba(192,57,43,0.65); display: block; margin-top: 4px;">
+                  ${spentPct}% من إجمالي الدخل
+                </span>
+              </div>
+            </div>
           </div>
+
+          <!-- Middle Section: Donut Chart & Category distribution list -->
+          <div style="background-color: #FFFFFF; border: 1px solid rgba(27,42,74,0.04); border-radius: 18px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(27,42,74,0.01); direction: ${isRtl ? "rtl" : "ltr"}; text-align: right;">
+            <div style="display: block; font-size: 11px; font-weight: 900; color: #1B2A4A; margin-bottom: 12px;">
+              <div style="display: inline-flex; align-items: center; gap: 6px; vertical-align: middle;">
+                <svg viewBox="0 0 24 24" style="width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.2; vertical-align: middle;"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+                <span style="vertical-align: middle;">توزيع المصروفات حسب الفئات</span>
+              </div>
+            </div>
+            <div style="display: table; width: 100%; table-layout: fixed;">
+              <div style="display: table-cell; width: 45%; text-align: center; vertical-align: middle;">
+                ${donutSvg}
+              </div>
+              <div style="display: table-cell; width: 55%; vertical-align: middle; text-align: ${isRtl ? "right" : "left"}; padding-${isRtl ? "right" : "left"}: 15px;">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  ${categoriesListHtml || `<p style="font-size: 9px; font-weight: bold; color: rgba(27,42,74,0.4); text-align: center; margin: 10px 0;">لا توجد مصروفات مسجلة.</p>`}
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Insights & Recommendations List -->
+          <div style="background-color: #FFFDFB; border: 1px solid #FADED3; border-radius: 18px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(212,117,75,0.01); direction: ${isRtl ? "rtl" : "ltr"}; text-align: right;">
+            <div style="display: block; font-size: 11px; font-weight: 900; color: #D4754B; margin-bottom: 12px;">
+              <div style="display: inline-flex; align-items: center; gap: 6px; vertical-align: middle;">
+                <svg viewBox="0 0 24 24" style="width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.2; vertical-align: middle;"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z"/></svg>
+                <span style="vertical-align: middle;">التحليل والتوصيات الذكية</span>
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              ${insightsHtml || `<p style="font-size: 9px; font-weight: bold; color: rgba(27,42,74,0.4); text-align: center; margin: 10px 0;">لا تتوفر توصيات لهذه الفترة.</p>`}
+            </div>
+          </div>
+
+          <!-- Footer (Legal SAMA disclaimer + branding) -->
+          <div style="border-top: 1px dashed rgba(27,42,74,0.1); padding-top: 10px; display: table; width: 100%; font-size: 8px; font-weight: bold; color: rgba(27,42,74,0.4); direction: ${isRtl ? "rtl" : "ltr"};">
+            <div style="display: table-cell; text-align: ${isRtl ? "right" : "left"}; vertical-align: middle;">
+              <div style="display: inline-flex; align-items: center; gap: 3px; vertical-align: middle;">
+                <svg viewBox="0 0 24 24" style="width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 2.2; vertical-align: middle;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <span style="vertical-align: middle;">جميع القيم بالريال السعودي (ر.س)</span>
+              </div>
+            </div>
+            <div style="display: table-cell; text-align: ${isRtl ? "left" : "right"}; vertical-align: middle;">
+              <span>${footerText}</span>
+            </div>
+          </div>
+
         </div>
       `;
       document.body.appendChild(tempDiv);
@@ -127,10 +368,23 @@ export default function ReportsPage() {
 
       const imgData = pdfCanvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
-      const imgWidth = 210;
-      const imgHeight = (pdfCanvas.height * imgWidth) / pdfCanvas.width;
       
-      pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const canvasRatio = pdfCanvas.height / pdfCanvas.width;
+      
+      let imgWidth = pageWidth;
+      let imgHeight = imgWidth * canvasRatio;
+      
+      if (imgHeight > pageHeight) {
+        imgHeight = pageHeight;
+        imgWidth = imgHeight / canvasRatio;
+      }
+      
+      const xOffset = (pageWidth - imgWidth) / 2;
+      const yOffset = (pageHeight - imgHeight) / 2;
+      
+      pdf.addImage(imgData, "PNG", xOffset, yOffset, imgWidth, imgHeight);
       pdf.save(`Ma3ak_Report_${selectedReport.title.replace(/\s+/g, "_")}.pdf`);
       
       setToastMessage(isRtl ? "تم تحميل التقرير كـ PDF ✓" : "PDF downloaded successfully ✓");

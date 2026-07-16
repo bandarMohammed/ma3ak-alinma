@@ -62,13 +62,35 @@ export class LoanSimulator extends BaseSimulator {
       : `Borrowing ${adjustedAmount.toLocaleString()} SAR reduces installment to ${adjustedInstallment.toLocaleString()} SAR, saving ${(totalProfit - adjustedTotalProfit).toLocaleString()} SAR in profit.`;
 
     const verdictWait = this.isRtl
-      ? `تأجيل القرض 6 أشهر والاعتماد على الادخار الذاتي لتوفير ${(currentSurplus * 6).toLocaleString()} ريال.`
-      : `Postponing the loan for 6 months and saving yields ${(currentSurplus * 6).toLocaleString()} SAR in self-funding.`;
+      ? `تأجيل القرض 6 أشهر والاعتماد على الادخار الذاتي لتوفير ${(currentSurplus * 6).toLocaleString()} ريال (يتبقى 6 أقساط بعد نهاية فترة المقارنة).`
+      : `Postponing the loan for 6 months and saving yields ${(currentSurplus * 6).toLocaleString()} SAR in self-funding (6 installments remain beyond the comparison window).`;
 
     const projectionMonths = tenure; // Match timeline projection to loan tenure (typically 60 or 36)
-    const endBalanceNow = context.currentSavings - 0 + (projectionMonths * (currentSurplus - installment)); // no downpayment for cash loan
-    const endBalanceAdjusted = context.currentSavings - 0 + (projectionMonths * (currentSurplus - adjustedInstallment));
-    const endBalanceWait = context.currentSavings + (6 * currentSurplus) - 0 + ((projectionMonths - 6) * (currentSurplus - installment));
+
+    // Timeline first — it is the single source of truth for balances. The loan
+    // PRINCIPAL is credited as a cash inflow when the loan starts (month 0 for
+    // Proceed/Adjusted, after the delay for Wait); previously the borrowed money
+    // never entered the balance, so the graph showed pure decline.
+    const timeline = this.generateTimeline(
+      context,
+      projectionMonths,
+      installment,
+      adjustedInstallment,
+      0, // no down payment for cash loan
+      0,
+      0,
+      amount,          // principal inflow — Proceed / Wait
+      adjustedAmount   // principal inflow — Adjusted (25% smaller loan)
+    );
+
+    // Scenario end balances = the timeline's final point (card and graph can
+    // never disagree again). Note: at the horizon the Wait scenario still owes
+    // its last 6 installments (its term ends 6 months later) — that is a real
+    // remaining liability, disclosed in the verdict below.
+    const lastPoint = timeline[timeline.length - 1];
+    const endBalanceNow = lastPoint.balanceNow;
+    const endBalanceAdjusted = lastPoint.balanceAdjusted;
+    const endBalanceWait = lastPoint.balanceWait;
 
     const scenarios: Scenario[] = [
       {
@@ -197,16 +219,6 @@ export class LoanSimulator extends BaseSimulator {
       scenarioAdjusted: `${adjustedInstallment.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`,
       scenarioWait: `0 ${this.isRtl ? "ريال" : "SAR"}`
     });
-
-    // Timeline Balance projection
-    const timeline = this.generateTimeline(
-      context,
-      projectionMonths,
-      installment,
-      adjustedInstallment,
-      0, // no down payment for cash loan
-      0
-    );
 
     // Summary
     let summary = "";

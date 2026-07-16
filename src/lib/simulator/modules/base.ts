@@ -10,7 +10,34 @@ export abstract class BaseSimulator {
   abstract calculate(userContext: UserContext, params: any): SimulationResult;
 
   /**
-   * Generates a realistic timeline balance projection
+   * The user's real monthly cash surplus: income minus TOTAL living outflow and
+   * existing financing. One definition, used by the timeline AND the scenario
+   * cards — previously the timeline used fixed expenses only, so the graph and
+   * the cards disagreed about the same future.
+   */
+  protected monthlySurplus(userContext: UserContext): number {
+    return userContext.monthlyIncome - userContext.monthlyTotalExpenses - userContext.existingFinancingPayments;
+  }
+
+  /**
+   * Generates the account-balance projection for the three scenarios.
+   *
+   * All three lines are ACTUAL account balances (what the account would hold
+   * that month) — no scenario gets fictional adjustments:
+   *  - Proceed: pay down payment now (and receive the loan principal now, if any),
+   *    then surplus minus installment each month.
+   *  - Wait: accumulate plain surplus for `delayMonths`, then start the same
+   *    commitment (down payment / principal at the delay month).
+   *  - Adjusted: the cheaper variant from month 0.
+   *
+   * `principalNow` / `principalAdjusted` are CASH INFLOWS (e.g. a personal loan's
+   * borrowed amount) credited when the commitment starts. Previously a cash loan
+   * showed installments draining the balance without the borrowed money ever
+   * arriving — the graph was wrong from month 0.
+   *
+   * A final/balloon payment lands at the END OF THE TERM: month `projectionMonths`
+   * for Proceed/Adjusted; for Wait the term ends `delayMonths` later, outside the
+   * window, so no balloon is deducted from the Wait line inside the window.
    */
   protected generateTimeline(
     userContext: UserContext,
@@ -19,52 +46,44 @@ export abstract class BaseSimulator {
     adjustedInstallment: number,
     downPaymentNow: number,
     downPaymentAdjusted: number,
-    finalPayment: number = 0
+    finalPayment: number = 0,
+    principalNow: number = 0,
+    principalAdjusted: number = 0,
+    delayMonths: number = 6
   ): TimelinePoint[] {
     const timeline: TimelinePoint[] = [];
-    const baseSavingsSurplus = userContext.monthlyIncome - userContext.monthlyFixedExpenses - userContext.existingFinancingPayments;
+    const surplus = this.monthlySurplus(userContext);
     const startBalance = userContext.currentSavings;
 
     for (let month = 0; month <= projectionMonths; month++) {
-      // A final/balloon payment is deducted once, at the end of the term.
       const balloon = month === projectionMonths ? finalPayment : 0;
-      // 1. Proceed Today (Now)
-      // Month 0: deduct down payment
-      // Month 1+: add surplus minus installment
-      let balanceNow = startBalance - downPaymentNow;
-      if (month > 0) {
-        balanceNow += month * (baseSavingsSurplus - installment);
-      }
 
-      // 2. Delay Purchase (Wait)
-      // Month 0 to 5: add base surplus
-      // Month 6: deduct down payment
-      // Month 7+: add surplus minus installment
-      let balanceWait = startBalance;
-      if (month < 6) {
-        balanceWait += month * baseSavingsSurplus;
+      // 1. Proceed Today
+      const balanceNow =
+        startBalance + principalNow - downPaymentNow + month * (surplus - installment) - balloon;
+
+      // 2. Delay by `delayMonths`
+      let balanceWait: number;
+      if (month < delayMonths) {
+        balanceWait = startBalance + month * surplus;
       } else {
-        balanceWait += 6 * baseSavingsSurplus - downPaymentNow + (month - 6) * (baseSavingsSurplus - installment);
+        balanceWait =
+          startBalance + delayMonths * surplus + principalNow - downPaymentNow +
+          (month - delayMonths) * (surplus - installment);
       }
 
-      // 3. Increase Down Payment (Adjusted)
-      // Month 0: deduct adjusted down payment
-      // Month 1+: add surplus minus adjusted installment
-      let balanceAdjusted = startBalance - downPaymentAdjusted;
-      if (month > 0) {
-        balanceAdjusted += month * (baseSavingsSurplus - adjustedInstallment);
-      }
+      // 3. Adjusted (cheaper variant) from month 0
+      const balanceAdjusted =
+        startBalance + principalAdjusted - downPaymentAdjusted + month * (surplus - adjustedInstallment) - balloon;
 
-      const monthName = this.isRtl 
-        ? `شهر ${month}` 
-        : `Month ${month}`;
+      const monthName = this.isRtl ? `شهر ${month}` : `Month ${month}`;
 
       timeline.push({
         month,
         monthName,
-        balanceNow: Math.round(balanceNow - balloon),
-        balanceWait: Math.round(balanceWait - balloon),
-        balanceAdjusted: Math.round(balanceAdjusted - balloon)
+        balanceNow: Math.round(balanceNow),
+        balanceWait: Math.round(balanceWait),
+        balanceAdjusted: Math.round(balanceAdjusted)
       });
     }
 

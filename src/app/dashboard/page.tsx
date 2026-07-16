@@ -56,7 +56,11 @@ export default function DashboardPage() {
     );
   }
 
-  const account = accounts[0];
+  const account = accounts[0]; // Current (checking) account — unchanged for transfers
+  const savingsAccount = accounts.find(a => /savings|توفير/i.test(a.type));
+  const currentBalance = account.balance;
+  const savingsBalance = savingsAccount?.balance ?? 0;
+  const totalBalance = currentBalance + savingsBalance;
   const recentTxs = transactions.slice(0, 5);
 
   // Spend comparison calculation for Recharts (Current Month vs Last Month) dynamically calculated
@@ -177,9 +181,9 @@ export default function DashboardPage() {
               
               <div className="flex justify-between items-center mb-1">
                 <span className="text-xs font-semibold text-white/60 tracking-wider">
-                  {t("availableBalance")}
+                  {isRtl ? "إجمالي الرصيد" : "Total Balance"}
                 </span>
-                <button 
+                <button
                   onClick={() => setMaskBalance(!maskBalance)}
                   aria-label={maskBalance ? (isRtl ? "إظهار الرصيد" : "Show balance") : (isRtl ? "إخفاء الرصيد" : "Hide balance")}
                   className="p-1.5 rounded-lg text-white/60 hover:text-white transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-white flex items-center justify-center"
@@ -192,13 +196,40 @@ export default function DashboardPage() {
                 {maskBalance ? (
                   <>•••••• {isRtl ? <RiyalSymbol size="1.2em" /> : "SAR"}</>
                 ) : (
-                  <>{account.balance.toLocaleString()} {isRtl ? <RiyalSymbol size="1.2em" /> : "SAR"}</>
+                  <>{totalBalance.toLocaleString()} {isRtl ? <RiyalSymbol size="1.2em" /> : "SAR"}</>
                 )}
               </h3>
 
-              <div className="border-t border-white/10 pt-4 flex justify-between items-center text-[10px] font-medium text-white/50">
-                <span>{account.account_number}</span>
-                <span>{account.type}</span>
+              {/* Account breakdown: Total = Current + Savings (same card design language) */}
+              <div className="border-t border-white/10 pt-4 space-y-2.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[11px] font-medium text-white/60">
+                    {isRtl ? "الحساب الجاري" : "Current Account"}
+                  </span>
+                  <span className="text-sm font-bold tracking-tight">
+                    {maskBalance ? (
+                      <>•••••• {isRtl ? <RiyalSymbol size="1em" /> : "SAR"}</>
+                    ) : (
+                      <>{currentBalance.toLocaleString()} {isRtl ? <RiyalSymbol size="1em" /> : "SAR"}</>
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[11px] font-medium text-white/60">
+                    {isRtl ? "حساب التوفير" : "Savings Account"}
+                  </span>
+                  <span className="text-sm font-bold tracking-tight">
+                    {maskBalance ? (
+                      <>•••••• {isRtl ? <RiyalSymbol size="1em" /> : "SAR"}</>
+                    ) : (
+                      <>{savingsBalance.toLocaleString()} {isRtl ? <RiyalSymbol size="1em" /> : "SAR"}</>
+                    )}
+                  </span>
+                </div>
+                <div className="border-t border-white/10 pt-2.5 flex justify-between items-center text-[10px] font-medium text-white/50">
+                  <span>{account.account_number}</span>
+                  <span>{account.type}</span>
+                </div>
               </div>
             </motion.div>
 

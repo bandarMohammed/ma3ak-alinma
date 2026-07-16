@@ -46,16 +46,20 @@ export function runSensitivityAnalysis(
   context: UserContext,
   newPayment: number
 ) {
-  const currentSurplus = context.monthlyIncome - context.monthlyFixedExpenses - context.existingFinancingPayments;
+  // Shocks are applied to the REAL surplus (income − TOTAL living outflow −
+  // existing financing). Using fixed expenses only ignored groceries, fuel,
+  // food etc., overstating the surplus and making every stress test pass
+  // too easily.
+  const currentSurplus = context.monthlyIncome - context.monthlyTotalExpenses - context.existingFinancingPayments;
   const newSurplus = currentSurplus - newPayment;
 
   // 1. Income drops 15%
   const shockedIncome = context.monthlyIncome * 0.85;
-  const shockedIncomeSurplus = shockedIncome - context.monthlyFixedExpenses - context.existingFinancingPayments - newPayment;
+  const shockedIncomeSurplus = shockedIncome - context.monthlyTotalExpenses - context.existingFinancingPayments - newPayment;
   const incomeShockFailed = shockedIncomeSurplus < 0;
 
   // 2. Expenses increase 10%
-  const shockedExpenses = context.monthlyFixedExpenses * 1.10;
+  const shockedExpenses = context.monthlyTotalExpenses * 1.10;
   const shockedExpensesSurplus = context.monthlyIncome - shockedExpenses - context.existingFinancingPayments - newPayment;
   const expenseShockFailed = shockedExpensesSurplus < 0;
 

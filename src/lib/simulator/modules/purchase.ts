@@ -144,19 +144,41 @@ export class PurchaseSimulator extends BaseSimulator {
           ? `يخفض القسط بنسبة 30% إلى ${adjustedInstallment.toLocaleString()} ريال، مما يوفر أماناً مالياً أكبر.`
           : `Reduces installment by 30% to ${adjustedInstallment.toLocaleString()} SAR, providing higher cash flow safety.`);
 
-    const verdictWait = isCash
-      ? (this.isRtl
-          ? `تأجيل الشراء 6 أشهر وتجميع وفورات إضافية بقيمة ${(currentSurplus * 6).toLocaleString()} ريال.`
-          : `Delaying purchase for 6 months allows building ${(currentSurplus * 6).toLocaleString()} SAR in savings.`)
-      : (this.isRtl
-          ? `يسمح بمراكمة وفورات إضافية بقيمة ${(currentSurplus * 6).toLocaleString()} ريال قبل الالتزام بالقسط.`
-          : `Allows building additional savings of ${(currentSurplus * 6).toLocaleString()} SAR prior to starting installments.`);
+    // NOTE: verdictWait is built AFTER the timeline (below) so it can quote the
+    // real liquidity benefit (minimum balance) instead of implying a higher end balance.
+    let verdictWait = "";
 
     const projectionMonths = isCash ? 6 : tenure;
-    // A final/balloon payment lands at the end of the term, reducing every end balance.
-    const endBalanceNow = context.currentSavings - downPaymentNow + (projectionMonths * (currentSurplus - installment)) - finalPayment;
-    const endBalanceAdjusted = context.currentSavings - downPaymentAdjusted + (projectionMonths * (currentSurplus - adjustedInstallment)) - finalPayment;
-    const endBalanceWait = context.currentSavings + (6 * currentSurplus) - downPaymentNow + ((projectionMonths - 6) * (currentSurplus - installment)) - finalPayment;
+
+    // Timeline first — the single source of truth for balances; scenario cards
+    // read their end balances from its final point so card and graph always agree.
+    const timeline = this.generateTimeline(
+      context,
+      projectionMonths,
+      installment,
+      adjustedInstallment,
+      downPaymentNow,
+      downPaymentAdjusted,
+      finalPayment
+    );
+    const lastPoint = timeline[timeline.length - 1];
+    const endBalanceNow = lastPoint.balanceNow;
+    const endBalanceAdjusted = lastPoint.balanceAdjusted;
+    const endBalanceWait = lastPoint.balanceWait;
+
+    // The REAL benefit of delaying is liquidity, not terminal wealth: with the
+    // same price and surplus, end balances converge — what differs is the lowest
+    // point the account touches along the way (the risk buffer).
+    const minBalanceNow = Math.min(...timeline.map(p => p.balanceNow));
+    const minBalanceWait = Math.min(...timeline.map(p => p.balanceWait));
+
+    verdictWait = isCash
+      ? (this.isRtl
+          ? `تأجيل الشراء 6 أشهر يحافظ على سيولة أعلى: أدنى رصيد خلال الفترة ${minBalanceWait.toLocaleString()} ريال بدلاً من ${minBalanceNow.toLocaleString()} ريال.`
+          : `Delaying 6 months keeps a larger safety buffer: lowest balance during the period is ${minBalanceWait.toLocaleString()} SAR instead of ${minBalanceNow.toLocaleString()} SAR.`)
+      : (this.isRtl
+          ? `يسمح بمراكمة وفورات بقيمة ${(currentSurplus * 6).toLocaleString()} ريال قبل الالتزام بالقسط (تتبقى 6 أقساط بعد نهاية فترة المقارنة).`
+          : `Allows building ${(currentSurplus * 6).toLocaleString()} SAR before starting installments (6 installments remain beyond the comparison window).`);
 
     const scenarios: Scenario[] = [
       {
@@ -338,17 +360,6 @@ export class PurchaseSimulator extends BaseSimulator {
         scenarioWait: `${finalPayment.toLocaleString()} ${this.isRtl ? "ريال" : "SAR"}`
       });
     }
-    // Timeline Points
-    const timeline = this.generateTimeline(
-      context,
-      projectionMonths,
-      installment,
-      adjustedInstallment,
-      downPaymentNow,
-      downPaymentAdjusted,
-      finalPayment
-    );
-
     // Summary text
     let summary = "";
     if (this.isRtl) {

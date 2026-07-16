@@ -190,11 +190,14 @@ export class SimulatorManager {
           if (!tenureDetected) tenure = 12; // default to 1 year for phones
         }
 
-        // If installment is not provided, calculate installment with 4% simple APR
+        // If installment is not provided, calculate it with 4% simple APR.
+        // Profit accrues on the FINANCED amount (price minus down payment) —
+        // the down-paid portion is never borrowed, so it must not bear profit.
         if (installmentVal === 0) {
           const apr = 0.04;
-          const totalInterest = amount * apr * (tenure / 12);
-          installmentVal = Math.round((amount - downPaymentVal + totalInterest) / tenure);
+          const financed = Math.max(0, amount - downPaymentVal);
+          const totalInterest = financed * apr * (tenure / 12);
+          installmentVal = Math.round((financed + totalInterest) / tenure);
         }
 
         const simulator = new PurchaseSimulator(language, "generic");
@@ -346,8 +349,10 @@ export class SimulatorManager {
       const downPayment = intent.downPayment && intent.downPayment > 0 ? intent.downPayment : 0;
       let installment = intent.installment && intent.installment > 0 ? intent.installment : 0;
       if (installment === 0) {
-        const totalInterest = amount * apr * (tenure / 12);
-        installment = Math.round((amount - downPayment + totalInterest) / tenure);
+        // Profit accrues on the FINANCED amount only (price minus down payment).
+        const financed = Math.max(0, amount - downPayment);
+        const totalInterest = financed * apr * (tenure / 12);
+        installment = Math.round((financed + totalInterest) / tenure);
       }
       const simulator = new PurchaseSimulator(language, "generic");
       return simulator.calculate(context, {

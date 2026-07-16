@@ -1,26 +1,36 @@
 import { Transaction } from "../data/types";
 import { UserContext } from "../simulator/types";
+import { summarizeForecast } from "../forecast/engine";
+import { capOutliers, mean, std } from "../forecast/classify";
+import {
+  SAVINGS_CATEGORY,
+  OBLIGATION_CATEGORIES,
+  FINANCING_PATTERN,
+  SAVINGS_PATTERN,
+  isRefundTx,
+  isFinancingTx,
+  isInternalTransfer,
+  isIncomeTx,
+  isSavingsAllocation
+} from "./patterns";
 
 // ============================================================================
 // Ma3ak — SINGLE SOURCE OF TRUTH for all money math.
 // Every monetary figure the app shows (totals, ratios, %, balances, DTI inputs,
 // report/habits numbers) is computed HERE in deterministic code. The LLM never
 // does arithmetic — it only phrases the numbers these functions return.
+//
+// Transaction CLASSIFICATION (what is a refund / financing / transfer / income)
+// lives in ./patterns as the single source of truth, shared with the forecast
+// engine so the two layers can never disagree about the same transaction.
 // ============================================================================
 
-/** Savings transfers are allocations, not living expenses — excluded from outflow. */
-const SAVINGS_CATEGORY = "Transfers";
 /** Large one-off impulse buys that would distort a monthly average. */
 const ONE_OFF_MERCHANTS = new Set(["Jarir Bookstore"]);
 
-/** A loan / financing installment (counted as existingFinancingPayments, so it must
- *  NOT also be counted inside the living-outflow average — that would double-count it). */
-function isFinancingTx(t: Transaction): boolean {
-  return t.type === "debit" && (
-    t.category === "Financing" ||
-    /loan|financ|installment|قسط|تمويل|مرابحة|رهن/i.test(t.merchant)
-  );
-}
+// Re-exported for backward compatibility with existing importers.
+export { isRefundTx };
+
 /** Last-resort demo balance when the client doesn't supply one (client normally does). */
 const FALLBACK_BALANCE = 12450.75;
 
@@ -53,12 +63,18 @@ export function deriveToday(txs: Transaction[]): string {
   const anchorDate = dates[p95Idx];
   const maxDate = dates[dates.length - 1];
 
-  // If max is more than 45 days beyond the p95 anchor, it's an outlier
+  // If max is more than 45 days beyond the p95 anchor, it's an outlier.
   const anchorMs = new Date(anchorDate).getTime();
   const maxMs = new Date(maxDate).getTime();
   const daysDiff = (maxMs - anchorMs) / (1000 * 60 * 60 * 24);
+  if (daysDiff <= 45) return maxDate;
 
-  return daysDiff > 45 ? anchorDate : maxDate;
+  // Outlier present: "today" is the newest NON-outlier date (any date within
+  // 45 days of the p95 anchor) — not the p95 date itself, which would yank
+  // the timeline back by up to 5% of the data span.
+  const cutoffMs = anchorMs + 45 * 24 * 60 * 60 * 1000;
+  const valid = dates.filter(d => new Date(d).getTime() <= cutoffMs);
+  return valid[valid.length - 1] ?? anchorDate;
 }
 
 const monthOf = (t: Transaction) => t.transaction_date.slice(0, 7); // YYYY-MM
@@ -81,30 +97,66 @@ export function monthsSpan(txs: Transaction[]): number {
   return Math.max(1, activeMonths(txs).size);
 }
 
+/** Monthly sums of the transactions matching `predicate`, over ACTIVE months only. */
+function monthlySums(txs: Transaction[], predicate: (t: Transaction) => boolean): number[] {
+  const active = activeMonths(txs);
+  const byMonth: Record<string, number> = {};
+  txs.filter(t => predicate(t) && active.has(monthOf(t)))
+    .forEach(t => { byMonth[monthOf(t)] = (byMonth[monthOf(t)] || 0) + t.amount; });
+  return Object.values(byMonth);
+}
+
 /**
  * Average monthly total of the transactions matching `predicate`, computed over the
  * ACTIVE months that actually contain such transactions (so income ÷ salary-months,
  * outflow ÷ spending-months — no dilution by boundary/partial months).
  */
 function monthlyAverage(txs: Transaction[], predicate: (t: Transaction) => boolean): number {
-  const active = activeMonths(txs);
-  const relevant = txs.filter(t => predicate(t) && active.has(monthOf(t)));
-  if (!relevant.length) return 0;
-  const monthsWith = new Set(relevant.map(monthOf)).size;
-  const sum = relevant.reduce((acc, t) => acc + t.amount, 0);
-  return Math.round(sum / Math.max(1, monthsWith));
+  const sums = monthlySums(txs, predicate);
+  if (!sums.length) return 0;
+  return Math.round(sums.reduce((a, b) => a + b, 0) / sums.length);
 }
 
-/** Average monthly income = credits ÷ number of months that received income. */
+/**
+ * Robust monthly average: winsorizes the monthly totals (median ± 3.5×MAD — the
+ * SAME rule the forecast engine uses) before averaging, so a single seasonal
+ * spike (Ramadan / Eid) or a one-month overspend cannot masquerade as the
+ * customer's TYPICAL monthly level. Falls back to the plain mean when there are
+ * too few months (<4) to judge outliers. Removes the upward bias a naive mean
+ * carries whenever spending is right-skewed, which it almost always is.
+ */
+function robustMonthlyAverage(txs: Transaction[], predicate: (t: Transaction) => boolean): number {
+  const sums = monthlySums(txs, predicate);
+  if (!sums.length) return 0;
+  const { series } = capOutliers(sums);
+  return Math.round(series.reduce((a, b) => a + b, 0) / series.length);
+}
+
+/**
+ * Average monthly income = credits ÷ number of months that received income.
+ * Only TRUE income counts: refunds/reversals are returned spending, and internal
+ * transfers (savings pot cash-out, wallet top-up return, own-account moves) are
+ * the user's own money changing pockets. Booking either as income would inflate
+ * earnings and every surplus/affordability figure derived from it.
+ */
 export function avgMonthlyIncome(txs: Transaction[]): number {
-  return monthlyAverage(txs, t => t.type === "credit");
+  return monthlyAverage(txs, isIncomeTx);
 }
 
-/** Average monthly living outflow = debits (excl. savings transfers, one-off impulses & financing). */
+/**
+ * Average monthly living outflow = debits, excluding:
+ *  - savings/investment transfers & wallet top-ups (allocations, not spending),
+ *  - one-off impulse buys (would distort a monthly average),
+ *  - financing installments (counted separately so they aren't double-charged).
+ */
 export function avgMonthlyOutflow(txs: Transaction[]): number {
-  return monthlyAverage(
+  return robustMonthlyAverage(
     txs,
-    t => t.type === "debit" && t.category !== SAVINGS_CATEGORY && !ONE_OFF_MERCHANTS.has(t.merchant) && !isFinancingTx(t)
+    t => t.type === "debit"
+      && t.category !== SAVINGS_CATEGORY
+      && !isInternalTransfer(t)
+      && !ONE_OFF_MERCHANTS.has(t.merchant)
+      && !isFinancingTx(t)
   );
 }
 
@@ -113,43 +165,98 @@ export function detectFinancingPayments(txs: Transaction[]): number {
   return monthlyAverage(txs, isFinancingTx);
 }
 
-/** Typical recurring monthly savings transfer (max month, from history — not a literal). */
+/**
+ * Typical recurring monthly savings transfer = MEDIAN of the monthly sums.
+ * (The previous max-of-all-months overstated the habit: one unusually large
+ * month became "typical" forever. The median is what the user usually does.)
+ *
+ * Only genuine savings/investment ALLOCATIONS count (isSavingsAllocation) — a plain
+ * ATM cash withdrawal or a bill paid via the Transfers rail is not "saving". Falls
+ * back to any Transfers-category debit when no allocation is explicitly tagged, so
+ * existing datasets keep working (backward compatible).
+ */
 export function typicalMonthlySaving(txs: Transaction[]): number {
+  const savingsDebits = txs.filter(isSavingsAllocation);
+  const source = savingsDebits.length
+    ? savingsDebits
+    : txs.filter(t => t.type === "debit" && t.category === SAVINGS_CATEGORY);
   const byMonth: Record<string, number> = {};
-  txs
-    .filter(t => t.type === "debit" && t.category === SAVINGS_CATEGORY)
-    .forEach(t => {
-      const m = t.transaction_date.slice(0, 7);
-      byMonth[m] = (byMonth[m] || 0) + t.amount;
-    });
-  const values = Object.values(byMonth);
-  return values.length ? Math.round(Math.max(...values)) : 0;
+  source.forEach(t => {
+    const m = t.transaction_date.slice(0, 7);
+    byMonth[m] = (byMonth[m] || 0) + t.amount;
+  });
+  const values = Object.values(byMonth).sort((a, b) => a - b);
+  if (!values.length) return 0;
+  const mid = Math.floor(values.length / 2);
+  const median = values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
+  return Math.round(median);
+}
+
+/**
+ * Accumulated balance of the user's savings / investment POT, reconstructed from
+ * history: every savings ALLOCATION (money moved from checking INTO the pot) adds
+ * to it; every pot WITHDRAWAL (money moved back OUT to checking) subtracts.
+ *
+ * Why this matters: the pot only ever appeared as a monthly OUTFLOW from checking.
+ * A year of ~2,000 SAR/month transfers therefore left the account and landed
+ * nowhere the engine could see — an invisible black hole. Every emergency-fund and
+ * affordability figure was computed off the checking balance alone, understating
+ * the customer's real liquidity by tens of thousands of SAR (money that never
+ * actually left the household, just changed pockets). Floors at 0 (a pot balance
+ * cannot go negative). Deterministic; no LLM.
+ */
+export function savingsPotBalance(txs: Transaction[]): number {
+  let bal = 0;
+  txs.forEach(t => {
+    if (t.category !== SAVINGS_CATEGORY) return;
+    if (!SAVINGS_PATTERN.test(`${t.merchant} ${t.description}`)) return;
+    bal += t.type === "debit" ? t.amount : -t.amount; // into pot vs. out of pot
+  });
+  return round2(Math.max(0, bal));
 }
 
 // ----------------------------------------------------------------------------
 // Financial profile (feeds the deterministic simulators)
 // ----------------------------------------------------------------------------
 
-/** Corrected UserContext: real balance as savings, detected financing, month-span averages. */
+/**
+ * Corrected UserContext for the simulators. `currentSavings` here means TOTAL LIQUID
+ * SAVINGS available in an emergency = checking balance + the reconstructed savings-pot
+ * balance. The pot is real, accessible liquidity; excluding it made every
+ * emergency-fund / affordability / stress-test result understate the customer's
+ * true safety margin. The displayed account balance stays separate (unchanged).
+ */
 export function buildFinancialProfile(txs: Transaction[], balance?: number): UserContext {
   const monthlyIncome = avgMonthlyIncome(txs) || 15000;
   
   // Calculate essential fixed obligations (Rent, Utilities, Insurance)
   // excluding variable lifestyle costs like restaurants, coffee, Careem, or shopping
+  // Essential fixed obligations across the split obligation categories (rent,
+  // utilities, telecom, insurance) — the SAME set of transactions the old single
+  // "Bills & Utilities" predicate captured, just re-bucketed, so this figure does
+  // not regress. Financing installments stay excluded (counted separately).
+  const FIXED_EXPENSE_CATEGORIES = new Set([
+    "Bills & Utilities", "Housing", "Telecom", "Insurance"
+  ]);
   const monthlyFixedExpenses = monthlyAverage(
     txs,
     t => t.type === "debit" && (
-      t.category === "Bills & Utilities" ||
-      t.category === "Insurance" ||
+      FIXED_EXPENSE_CATEGORIES.has(t.category) ||
       t.merchant === "Emaar Real Estate"
     ) && !isFinancingTx(t)
   ) || 4000;
 
   const monthlyTotalExpenses = avgMonthlyOutflow(txs) || 0;
   const existingFinancingPayments = detectFinancingPayments(txs);
-  const currentSavings = typeof balance === "number" && isFinite(balance) && balance > 0
+  // Any REAL finite balance is respected — including zero and negative
+  // (overdraft). Silently replacing a negative balance with a healthy demo
+  // fallback hid genuine financial distress from every simulation.
+  const checking = typeof balance === "number" && isFinite(balance)
     ? round2(balance)
     : FALLBACK_BALANCE;
+  // Total liquid savings = checking + savings pot. The pot is money the customer
+  // set aside but can draw on in an emergency, so it belongs in the safety buffer.
+  const currentSavings = round2(checking + savingsPotBalance(txs));
 
   return { monthlyIncome, monthlyFixedExpenses, monthlyTotalExpenses, currentSavings, existingFinancingPayments };
 }
@@ -171,59 +278,106 @@ export interface ReportResult {
 function periodLabel(daysRange: number, isArabic: boolean): string {
   if (daysRange <= 7) return isArabic ? "الأسبوع الماضي" : "Last 7 Days";
   if (daysRange <= 15) return isArabic ? "الـ 15 يوماً الماضية" : "Last 15 Days";
-  if (daysRange <= 45) return isArabic ? "الشهر الماضي" : "Last Month";
+  if (daysRange <= 45) return isArabic ? "الـ 30 يوماً الماضية" : "Last 30 Days";
   if (daysRange <= 100) return isArabic ? "الـ 3 أشهر الماضية" : "Last 3 Months";
   if (daysRange <= 200) return isArabic ? "الـ 6 أشهر الماضية" : "Last 6 Months";
   return isArabic ? "السنة الماضية" : "Last Year";
 }
 
-function formatDateStr(d: Date): string {
-  if (isNaN(d.getTime())) return "";
-  const day = String(d.getDate()).padStart(2, "0");
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const year = d.getFullYear();
-  return `${day}-${month}-${year}`;
+/** DD-MM-YYYY display form of an ISO (YYYY-MM-DD) date string. */
+function formatISODate(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : iso;
+}
+
+/** ISO date arithmetic in UTC — immune to local timezone offsets. */
+function addDaysISO(iso: string, days: number): string {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Calendar-month window relative to the data anchor month.
+ * offset 0 = anchor month (capped at the anchor day → month-to-date),
+ * offset -1 = previous full calendar month, etc.
+ */
+export function calendarMonthRange(
+  txs: Transaction[],
+  offset: number
+): { startDate: string; endDate: string; month: string } {
+  const anchor = deriveToday(txs);
+  const [y, m] = anchor.slice(0, 7).split("-").map(Number);
+  const total = y * 12 + (m - 1) + offset;
+  const yy = Math.floor(total / 12);
+  const mm = ((total % 12) + 12) % 12; // 0-based month, safe for negative offsets
+  const month = `${yy}-${String(mm + 1).padStart(2, "0")}`;
+  const lastDay = new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate();
+  const startDate = `${month}-01`;
+  let endDate = `${month}-${String(lastDay).padStart(2, "0")}`;
+  if (endDate > anchor) endDate = anchor; // current month → month-to-date
+  return { startDate, endDate, month };
+}
+
+export type ReportRange = number | { startDate: string; endDate: string; label?: string };
+
+/**
+ * SINGLE range filter used by every report path. Transaction dates are ISO
+ * (YYYY-MM-DD) strings, so lexicographic comparison is exact and timezone-proof.
+ * Both bounds are inclusive; the upper bound also shields reports from
+ * future-dated outlier transactions that deriveToday excludes from the anchor.
+ */
+function filterByDateRange(txs: Transaction[], startISO: string, endISO: string): Transaction[] {
+  return txs.filter(t => {
+    const d = t.transaction_date.slice(0, 10);
+    return d >= startISO && d <= endISO;
+  });
+}
+
+/** Rounded percentages that are guaranteed to sum to 100 (largest-remainder method). */
+function percentagesOf(amounts: number[]): number[] {
+  const total = amounts.reduce((a, b) => a + b, 0);
+  if (total <= 0) return amounts.map(() => 0);
+  const exact = amounts.map(a => (a / total) * 100);
+  const floors = exact.map(Math.floor);
+  let leftover = 100 - floors.reduce((a, b) => a + b, 0);
+  // Hand the leftover points to the largest fractional remainders, deterministically.
+  const order = exact
+    .map((v, i) => ({ i, frac: v - floors[i] }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i);
+  const out = [...floors];
+  for (let k = 0; k < order.length && leftover > 0; k++, leftover--) out[order[k].i]++;
+  return out;
 }
 
 /** Deterministic spending report over the last daysRange or custom date range. */
 export function computeReport(
   txs: Transaction[],
-  range: number | { startDate: string; endDate: string },
+  range: ReportRange,
   language: "ar" | "en"
 ): ReportResult {
   const isArabic = language === "ar";
-  let filteredTxs: Transaction[] = [];
-  let periodText = "";
+
+  // Normalize every request into ONE inclusive [start, end] ISO window + label.
+  let startISO: string;
+  let endISO: string;
+  let periodText: string;
 
   if (typeof range === "number") {
-    const today = new Date(deriveToday(txs));
-    const startDateLimit = new Date(today);
-    startDateLimit.setDate(today.getDate() - range);
-    filteredTxs = txs.filter(t => new Date(t.transaction_date) >= startDateLimit);
+    // "Last N days" = the N days ending at the data anchor, inclusive.
+    endISO = deriveToday(txs);
+    startISO = addDaysISO(endISO, -(range - 1));
     periodText = periodLabel(range, isArabic);
   } else {
-    let start = new Date(range.startDate);
-    let end = new Date(range.endDate);
-
-    // Auto-swap if dates are inverted
-    if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && start > end) {
-      const temp = start;
-      start = end;
-      end = temp;
-    }
-
-    filteredTxs = txs.filter(t => {
-      const d = new Date(t.transaction_date);
-      return d >= start && d <= end;
-    });
-
-    const startDisplay = formatDateStr(start) || range.startDate;
-    const endDisplay = formatDateStr(end) || range.endDate;
-
-    periodText = isArabic
-      ? `الفترة من ${startDisplay} إلى ${endDisplay}`
-      : `Period from ${startDisplay} to ${endDisplay}`;
+    startISO = range.startDate.slice(0, 10);
+    endISO = range.endDate.slice(0, 10);
+    if (startISO > endISO) [startISO, endISO] = [endISO, startISO]; // auto-swap inverted dates
+    periodText = range.label ?? (isArabic
+      ? `الفترة من ${formatISODate(startISO)} إلى ${formatISODate(endISO)}`
+      : `Period from ${formatISODate(startISO)} to ${formatISODate(endISO)}`);
   }
+
+  const filteredTxs = filterByDateRange(txs, startISO, endISO);
 
   let totalSpent = 0;
   let totalIncome = 0;
@@ -231,20 +385,35 @@ export function computeReport(
 
   filteredTxs.forEach(t => {
     if (t.type === "credit") {
-      totalIncome += t.amount;
+      if (isRefundTx(t)) {
+        // A refund reverses spending: subtract from the period's outflow (and
+        // its category) instead of inflating income.
+        totalSpent -= t.amount;
+        categoryGroups[t.category] = (categoryGroups[t.category] || 0) - t.amount;
+      } else if (isInternalTransfer(t)) {
+        // Own money returning (savings pot cash-out, wallet top-up return) is an
+        // internal move — neither income nor a fresh inflow. Counting it as income
+        // would fabricate earnings that never entered from outside the household.
+      } else {
+        totalIncome += t.amount;
+      }
     } else {
       totalSpent += t.amount;
       categoryGroups[t.category] = (categoryGroups[t.category] || 0) + t.amount;
     }
   });
+  totalSpent = Math.max(0, totalSpent);
 
-  const topCategories = Object.entries(categoryGroups)
-    .map(([category, amount]) => ({
-      category,
-      amount,
-      percentage: totalSpent > 0 ? Math.round((amount / totalSpent) * 100) : 0
-    }))
-    .sort((a, b) => b.amount - a.amount);
+  const sortedCats = Object.entries(categoryGroups)
+    .map(([c, amount]) => [c, Math.max(0, amount)] as [string, number]) // a fully-refunded category floors at 0
+    .filter(([, amount]) => amount > 0)
+    .sort((a, b) => b[1] - a[1]);
+  const pcts = percentagesOf(sortedCats.map(([, amount]) => amount));
+  const topCategories = sortedCats.map(([category, amount], i) => ({
+    category,
+    amount: round2(amount),
+    percentage: pcts[i]
+  }));
 
   const largestTxs = filteredTxs
     .filter(t => t.type === "debit")
@@ -293,8 +462,8 @@ export function computeReport(
   return {
     type: "report",
     period: periodText,
-    total_spent: totalSpent,
-    total_income: totalIncome,
+    total_spent: round2(totalSpent),
+    total_income: round2(totalIncome),
     top_categories: topCategories,
     largest_transactions: largestTxs,
     insights
@@ -313,11 +482,8 @@ export interface HabitsResult {
 /** Deterministic 30-day spending-habits audit. Every number is computed from `txs`/`balance`. */
 export function computeHabits(txs: Transaction[], language: "ar" | "en", balance?: number): HabitsResult {
   const isArabic = language === "ar";
-  const today = new Date(deriveToday(txs));
-  const last30 = new Date(today);
-  last30.setDate(today.getDate() - 30);
-
-  const last30Txs = txs.filter(t => new Date(t.transaction_date) >= last30);
+  const today = deriveToday(txs);
+  const last30Txs = filterByDateRange(txs, addDaysISO(today, -29), today);
   const foodDeliveryTotal = last30Txs
     .filter(t => t.category === "Food & Restaurants" && (t.merchant === "Hungerstation" || t.merchant === "Jahez"))
     .reduce((sum, t) => sum + t.amount, 0);
@@ -417,9 +583,13 @@ export function computeCommitments(
   });
 
   const detectedDefaults: { merchant: string; category: string; emoji: string; expectedAmount: number; dueDate: number; duration: string; startMonth: string }[] = [];
+  // Matched by NORMALIZED SUBSTRING below (not exact name), so a base token like
+  // "Panda" / "Othaim" / "Tamimi" catches "Panda Supermarket" / "Othaim Markets" /
+  // "Tamimi Markets". Supermarkets are listed uniformly: groceries are variable
+  // essential CONSUMPTION, not a fixed monthly commitment with a set amount/due-day.
   const ONE_OFF_MERCHANTS = new Set([
-    "Jarir Bookstore", "Hungerstation", "Jahez", "Uber", "Careem", "Amazon", "Apple", "Google", 
-    "Panda", "Othaim", "Lulu", "Subway", "Starbucks", "McDonalds", "KFC", "AlBaik", "Hyper Panda",
+    "Jarir Bookstore", "Hungerstation", "Jahez", "Uber", "Careem", "Amazon", "Apple", "Google",
+    "Panda", "Othaim", "Tamimi", "Lulu", "Subway", "Starbucks", "McDonalds", "KFC", "AlBaik", "Hyper Panda",
     "Carrefour", "Noon", "Shein", "Talabat", "Mrsool", "Sary", "Nana"
   ]);
 
@@ -428,20 +598,59 @@ export function computeCommitments(
     const monthsActive = new Set(group.map(t => t.transaction_date.slice(0, 7)));
     const avgCountPerMonth = group.length / monthsActive.size;
     
+    // Blocklist match by NORMALIZED SUBSTRING, not exact name: real merchant names
+    // carry suffixes/domains ("Amazon.sa", "Noon.com"), so exact `.has("Amazon")`
+    // never fired and let discretionary shops leak into commitments. Substring
+    // matching makes "amazon" catch "Amazon.sa".
+    const normalizedName = merchantName.toLowerCase();
+    const isBlocklisted = Array.from(ONE_OFF_MERCHANTS)
+      .some(b => normalizedName.includes(b.toLowerCase()));
+
     // We consider it a recurring commitment if:
     // - Active in 3+ months
-    // - Paid roughly once/twice a month (avg frequency <= 1.8)
+    // - Paid roughly once or twice a month (avg frequency <= 2.2 — admits true
+    //   twice-monthly bills; groceries/coffee/delivery run 4–17×/month, far above)
     // - Not a retail shop or food delivery
-    if (monthsActive.size >= 3 && avgCountPerMonth <= 1.8 && !ONE_OFF_MERCHANTS.has(merchantName)) {
-      // Calculate average amount
-      const sum = group.reduce((acc, t) => acc + t.amount, 0);
-      const avgAmount = Math.round(sum / group.length);
-      
-      // Category and due date day from the latest transaction
+    if (monthsActive.size >= 3 && avgCountPerMonth <= 2.2 && !isBlocklisted) {
+      // Expected MONTHLY amount = average of the MONTHLY SUMS. Averaging per
+      // transaction understated merchants paid more than once a month (a bill
+      // paid twice at 150 is a 300/month obligation, not 150).
+      const byMonth: Record<string, number> = {};
+      group.forEach(t => {
+        const m = t.transaction_date.slice(0, 7);
+        byMonth[m] = (byMonth[m] || 0) + t.amount;
+      });
+      const monthlySums = Object.values(byMonth);
+      const avgAmount = Math.round(monthlySums.reduce((a, b) => a + b, 0) / monthlySums.length);
+
+      // Category from the latest transaction; due day = MEDIAN day across all
+      // payments (the single latest day was noise — one late payment moved it).
       const sortedGroup = [...group].sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
       const latestTx = sortedGroup[0];
       const category = latestTx.category;
-      const avgDay = parseInt(latestTx.transaction_date.slice(8, 10), 10);
+
+      // A true COMMITMENT is a predictable, fixed obligation — NOT lumpy
+      // discretionary spend that merely happens to recur. Two ways to qualify:
+      //  (a) OBLIGATION flow — bills/utilities/insurance/financing/rent/BNPL or the
+      //      savings-pot habit. These must be paid regardless of how much the
+      //      amount drifts, so trending utilities (electricity/water) still count.
+      //  (b) STABLE recurring — a low coefficient of variation across active months
+      //      (captures fixed subscriptions like Netflix even though its category is
+      //      Entertainment, and predictable essentials like groceries).
+      // Everything else (online shops, cinemas, occasional pharmacy runs) is
+      // variable, high-CV, non-obligation spend and must NOT be booked as a
+      // monthly commitment — doing so overstated fixed obligations and understated
+      // flexible spend in the budget, surplus, and AI advice.
+      const isObligation =
+        OBLIGATION_CATEGORIES.has(category) ||
+        FINANCING_PATTERN.test(`${merchantName} ${latestTx.description}`) ||
+        category === SAVINGS_CATEGORY;
+      const meanMonthly = mean(monthlySums);
+      const cv = meanMonthly > 0 ? std(monthlySums) / meanMonthly : 1;
+      const isStableRecurring = cv <= 0.20;
+      if (!isObligation && !isStableRecurring) return; // discretionary — skip
+      const days = group.map(t => parseInt(t.transaction_date.slice(8, 10), 10)).sort((a, b) => a - b);
+      const avgDay = days[Math.floor(days.length / 2)];
       
       // Select Emoji based on merchant name or category
       let emoji = "📋";
@@ -520,25 +729,41 @@ export function computeCommitments(
 
   // 3. Check current month transactions to see how much is paid
   const currentMonthTxs = txs.filter(t => t.transaction_date.startsWith(currentMonthPrefix) && t.type === "debit");
+  const currentMonthCredits = txs.filter(t => t.transaction_date.startsWith(currentMonthPrefix) && t.type === "credit");
 
   const commitments_list: CommitmentItem[] = merged.map((item, idx) => {
-    // Find all transactions for this merchant in the current month
-    const matchedTxs = currentMonthTxs.filter(t => t.merchant.toLowerCase().includes(item.merchant.toLowerCase()));
-    const paidAmount = matchedTxs.reduce((sum, t) => sum + t.amount, 0);
-    const remainingAmount = Math.max(0, item.expectedAmount - paidAmount);
+    // Paid this month: EXACT merchant match first (detected commitments carry the
+    // exact transaction merchant name, and substring matching double-counted —
+    // a commitment named "stc" absorbed "stc pay" payments too). Substring is
+    // only a fallback for hand-typed custom commitment names with no exact hit.
+    const name = item.merchant.trim().toLowerCase();
+    const exact = currentMonthTxs.filter(t => t.merchant.trim().toLowerCase() === name);
+    const matchedTxs = exact.length
+      ? exact
+      : currentMonthTxs.filter(t => t.merchant.toLowerCase().includes(name));
+    // Sum ALL of this month's payments (partial payments accumulate; refunds
+    // from the same merchant reduce the paid total).
+    const paidAmount = matchedTxs.reduce((sum, t) => sum + (t.type === "debit" ? t.amount : 0), 0)
+      - currentMonthCredits
+          .filter(t => t.merchant.trim().toLowerCase() === name && isRefundTx(t))
+          .reduce((s, t) => s + t.amount, 0);
+    const paidClamped = Math.max(0, paidAmount);
+    const remainingAmount = Math.max(0, item.expectedAmount - paidClamped);
     const remainingPercentage = item.expectedAmount > 0 ? Math.round((remainingAmount / item.expectedAmount) * 100) : 0;
-    
+
     return {
       id: `commitment-${idx + 1}`,
       merchant: item.merchant,
       category: item.category,
       emoji: item.emoji,
       expectedAmount: item.expectedAmount,
-      paidAmount: round2(paidAmount),
+      paidAmount: round2(paidClamped),
       remainingAmount: round2(remainingAmount),
       remainingPercentage,
       dueDate: item.dueDate,
-      status: remainingAmount === 0 ? "Completed" : "In Progress",
+      // Completed requires a REAL obligation fully covered — a zero-amount
+      // commitment must not be born "Completed".
+      status: item.expectedAmount > 0 && remainingAmount === 0 ? "Completed" : "In Progress",
       date: matchedTxs[0] ? matchedTxs[0].transaction_date : undefined,
       duration: item.duration,
       startMonth: item.startMonth
@@ -548,7 +773,10 @@ export function computeCommitments(
   // Calculate totals
   const total_commitments = commitments_list.reduce((sum, item) => sum + item.expectedAmount, 0);
   const total_paid = commitments_list.reduce((sum, item) => sum + item.paidAmount, 0);
-  const paid_percentage = total_commitments > 0 ? Math.round((total_paid / total_commitments) * 100) : 0;
+  // Overpayments (paying more than expected) must not push progress past 100%.
+  const paid_percentage = total_commitments > 0
+    ? Math.min(100, Math.round((total_paid / total_commitments) * 100))
+    : 0;
 
   return {
     type: "commitments",
@@ -567,6 +795,8 @@ export function computeCommitments(
 export interface FinancialSummary {
   text: string;          // Human-readable summary for the system prompt
   balance: number;
+  savingsPotBalance: number; // accumulated savings/investment pot (separate asset)
+  netWorthLiquid: number;    // checking balance + savings pot (total liquid assets)
   monthlyIncome: number;
   monthlyExpenses: number;
   monthlySurplus: number;
@@ -602,13 +832,24 @@ export function buildFinancialSummary(
   const monthlyExpenses = avgMonthlyOutflow(txs) + detectFinancingPayments(txs);
   const monthlySurplus = monthlyIncome - monthlyExpenses;
   const savingsTransfer = typicalMonthlySaving(txs);
+  const potBalance = savingsPotBalance(txs);
+  const netWorthLiquid = round2(balance + potBalance);
 
   // --- Current month transactions ---
   const currentMonthTxs = txs.filter(t => t.transaction_date.startsWith(currentMonth));
   const currentMonthDebits = currentMonthTxs.filter(t => t.type === "debit");
   const currentMonthCredits = currentMonthTxs.filter(t => t.type === "credit");
-  const thisMonthSpent = currentMonthDebits.reduce((s, t) => s + t.amount, 0);
-  const thisMonthIncome = currentMonthCredits.reduce((s, t) => s + t.amount, 0);
+  // Refund credits reverse a same-period debit — mirror computeReport so the AI
+  // context and the report card agree: refunds reduce spending, and only TRUE
+  // income (isIncomeTx) counts as income. Internal transfers (savings-pot cash-out,
+  // wallet top-up return) and refunds must NOT inflate "income this month".
+  const thisMonthRefunds = currentMonthCredits
+    .filter(isRefundTx)
+    .reduce((s, t) => s + t.amount, 0);
+  const thisMonthSpent = Math.max(0, currentMonthDebits.reduce((s, t) => s + t.amount, 0) - thisMonthRefunds);
+  const thisMonthIncome = currentMonthCredits
+    .filter(isIncomeTx)
+    .reduce((s, t) => s + t.amount, 0);
 
   // --- Last 10 transactions (sorted newest first) ---
   const sortedTxs = [...txs].sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
@@ -635,7 +876,11 @@ export function buildFinancialSummary(
   } : null;
 
   // --- Last salary / income ---
-  const lastSalary = sortedTxs.find(t => t.type === "credit");
+  // Must be TRUE income, not merely the latest credit: with refunds and internal
+  // transfers (savings-pot cash-out) now in the data, "latest credit" could be a
+  // reversal or an own-pocket move, which would mislabel the income source/day the
+  // AI reports. isIncomeTx isolates genuine earnings (salary/deposits).
+  const lastSalary = sortedTxs.find(isIncomeTx) ?? sortedTxs.find(t => t.type === "credit");
 
   // --- Category breakdown (current month) ---
   const catMap: Record<string, number> = {};
@@ -683,6 +928,9 @@ export function buildFinancialSummary(
   const commitmentsResult = computeCommitments(txs, language, customCommitments, deletedCommitments);
   const commitments = commitmentsResult.commitments_list;
 
+  // --- Next-month spending outlook (deterministic forecast engine) ---
+  const outlook = summarizeForecast(txs);
+
   // --- Biggest single transaction this month ---
   const biggestThisMonth = currentMonthDebits.length > 0
     ? currentMonthDebits.reduce((max, t) => t.amount > max.amount ? t : max, currentMonthDebits[0])
@@ -695,7 +943,9 @@ export function buildFinancialSummary(
     lines.push(`=== السياق المالي للعميل (محسوب بالنظام — الأرقام نهائية لا تعيد حسابها) ===`);
     lines.push(``);
     lines.push(`📅 تاريخ اليوم في النظام: ${today}`);
-    lines.push(`💰 الرصيد الحالي: ${fmt(balance)} ريال سعودي`);
+    lines.push(`💰 الرصيد الجاري (الحساب): ${fmt(balance)} ريال سعودي`);
+    lines.push(`🐷 رصيد الوعاء الادخاري المتراكم: ${fmt(potBalance)} ريال سعودي`);
+    lines.push(`🏦 إجمالي السيولة (الجاري + الادخار): ${fmt(netWorthLiquid)} ريال سعودي`);
     lines.push(`📊 متوسط الدخل الشهري: ${fmt(monthlyIncome)} ريال (${lastSalary ? lastSalary.merchant : "غير محدد"}, يوم ${lastSalary ? lastSalary.transaction_date.slice(8, 10) : "27"} من كل شهر)`);
     lines.push(`📉 متوسط المصروفات الشهرية: ${fmt(monthlyExpenses)} ريال`);
     lines.push(`📈 الفائض الشهري التقديري: ${fmt(monthlySurplus)} ريال`);
@@ -752,12 +1002,39 @@ export function buildFinancialSummary(
     });
 
     lines.push(``);
+    lines.push(`--- توقعات الشهر القادم (محسوبة بمحرك التنبؤ — لا تعيد حسابها) ---`);
+    if (outlook.items.length === 0) {
+      lines.push(`لا تتوفر بيانات كافية للتنبؤ بعد (يتطلب المحرك 3 أشهر نشاط على الأقل لكل جهة). لا تُقدّم أي توقعات رقمية للعميل.`);
+    } else {
+    lines.push(`الاستهلاك المعيشي المتوقع: ${fmt(outlook.nextMonthConsumption)} ريال`);
+    lines.push(`الالتزامات المالية المتوقعة (فواتير/تمويل/تأمين): ${fmt(outlook.nextMonthObligations)} ريال`);
+    lines.push(`إجمالي المصروفات المتوقعة (استهلاك + التزامات): ${fmt(outlook.nextMonthTotalExpenses)} ريال`);
+    lines.push(`تحويلات داخلية متوقعة (ادخار/استثمار — ليست مصروفاً): ${fmt(outlook.nextMonthTransfers)} ريال`);
+    const typeAr: Record<string, string> = {
+      fixed: "التزام ثابت (وسيط آخر 3 أشهر)",
+      variable: "مصروف متغير (متوسط مرجّح لآخر 6 أشهر)",
+      trending: "اتجاه متصاعد/متنازل (خط اتجاه مخفَّف)",
+      sparse: "مصروف موسمي (المبلغ المعتاد ÷ الفترة المعتادة)"
+    };
+    const flowAr: Record<string, string> = {
+      consumption: "استهلاك",
+      obligation: "التزام",
+      transfer: "تحويل داخلي"
+    };
+    outlook.items.forEach(it => {
+      lines.push(`• ${it.merchant} [${flowAr[it.flow]}]: ~${fmt(it.expected)} ريال — ثقة ${it.confidence}% — ${typeAr[it.type] || it.type}`);
+    });
+    }
+
+    lines.push(``);
     lines.push(`=== نهاية السياق المالي ===`);
   } else {
     lines.push(`=== CLIENT FINANCIAL CONTEXT (computed by system — numbers are final, do not recalculate) ===`);
     lines.push(``);
     lines.push(`📅 System Date: ${today}`);
-    lines.push(`💰 Current Balance: ${fmt(balance)} SAR`);
+    lines.push(`💰 Current Balance (Checking): ${fmt(balance)} SAR`);
+    lines.push(`🐷 Accumulated Savings Pot Balance: ${fmt(potBalance)} SAR`);
+    lines.push(`🏦 Total Liquid Assets (Checking + Savings): ${fmt(netWorthLiquid)} SAR`);
     lines.push(`📊 Avg Monthly Income: ${fmt(monthlyIncome)} SAR (${lastSalary ? lastSalary.merchant : "N/A"}, day ${lastSalary ? lastSalary.transaction_date.slice(8, 10) : "27"})`);
     lines.push(`📉 Avg Monthly Expenses: ${fmt(monthlyExpenses)} SAR`);
     lines.push(`📈 Estimated Monthly Surplus: ${fmt(monthlySurplus)} SAR`);
@@ -814,12 +1091,28 @@ export function buildFinancialSummary(
     });
 
     lines.push(``);
+    lines.push(`--- Next-Month Outlook (computed by forecast engine — do not recalculate) ---`);
+    if (outlook.items.length === 0) {
+      lines.push(`Not enough history to forecast yet (the engine needs at least 3 active months per merchant). Do NOT give the client any numeric predictions.`);
+    } else {
+      lines.push(`Expected consumption (living/lifestyle): ${fmt(outlook.nextMonthConsumption)} SAR`);
+      lines.push(`Expected financial obligations (bills/financing/insurance): ${fmt(outlook.nextMonthObligations)} SAR`);
+      lines.push(`Expected total expenses (consumption + obligations): ${fmt(outlook.nextMonthTotalExpenses)} SAR`);
+      lines.push(`Expected internal transfers (savings/investments — NOT an expense): ${fmt(outlook.nextMonthTransfers)} SAR`);
+      outlook.items.forEach(it => {
+        lines.push(`• ${it.merchant} [${it.flow}]: ~${fmt(it.expected)} SAR — confidence ${it.confidence}% — ${it.reason}`);
+      });
+    }
+
+    lines.push(``);
     lines.push(`=== END FINANCIAL CONTEXT ===`);
   }
 
   return {
     text: lines.join("\n"),
     balance,
+    savingsPotBalance: potBalance,
+    netWorthLiquid,
     monthlyIncome,
     monthlyExpenses,
     monthlySurplus,
