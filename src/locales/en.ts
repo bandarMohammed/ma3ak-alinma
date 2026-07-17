@@ -40,7 +40,7 @@ export const en = {
   chatInputPlaceholder: "Ask Ma3ak about your history, spending or simulations...",
   voiceInputTooltip: "Voice input (UI only)",
   suggestedPrompts: "Suggested Questions",
-  chipReport: "This week's report",
+  chipReport: "Last month's report",
   chipHabits: "How is my spending?",
   chipSimulate: "Simulate a decision",
   typingIndicator: "Ma3ak is calculating...",

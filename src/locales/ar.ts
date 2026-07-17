@@ -42,7 +42,7 @@ export const ar: Record<TranslationKeys, string> = {
   chatInputPlaceholder: "اسأل معك عن تاريخك المالي، أو تحليل مصروفاتك، أو محاكاة قراراتك...",
   voiceInputTooltip: "إدخال صوتي (العرض فقط)",
   suggestedPrompts: "أسئلة مقترحة",
-  chipReport: "تقرير الأسبوع الحالي",
+  chipReport: "تقرير آخر شهر",
   chipHabits: "كيف صرفي هذا الشهر؟",
   chipSimulate: "محاكاة قرار مالي",
   typingIndicator: "«معك» يقوم بالحساب والتحليل المالي...",

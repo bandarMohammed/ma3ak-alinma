@@ -792,7 +792,7 @@ export default function ChatPage() {
                 <motion.button
                   whileHover={{ y: -4, scale: 1.01 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => handleSendMessage(isRtl ? "اعطني تقرير صرفي للأسبوع الماضي" : "Give me a financial report for the last week")}
+                  onClick={() => handleSendMessage(isRtl ? "اعطني تقرير الشهر الماضي" : "Give me last month's report")}
                   className="bg-white rounded-2xl p-5 border border-brand-navy/5 shadow-sm text-right flex flex-col justify-between h-36 relative overflow-hidden group hover:border-brand-purple/25 transition-all focus:outline-none"
                 >
                   <div className="w-9 h-9 bg-brand-purple/10 flex items-center justify-center rounded-xl text-brand-purple mb-3">
@@ -1714,7 +1714,7 @@ export default function ChatPage() {
       <div className="px-5 py-2 flex gap-2 overflow-x-auto bg-brand-cream/70 md:bg-transparent backdrop-blur-md flex-shrink-0 select-none md:justify-center md:pb-3">
         <motion.button
           whileTap={{ scale: 0.95 }}
-          onClick={() => handleSendMessage(isRtl ? "اعطني تقرير صرفي للأسبوع الماضي" : "Give me a financial report for the last week")}
+          onClick={() => handleSendMessage(isRtl ? "اعطني تقرير الشهر الماضي" : "Give me last month's report")}
           className="px-3.5 py-2 bg-white text-brand-navy/70 border border-brand-navy/5 rounded-full text-[10px] font-extrabold shadow-sm hover:border-brand-purple/20 hover:text-brand-purple flex-shrink-0 flex items-center gap-1.5"
         >
           <FileText className="w-3.5 h-3.5" />
